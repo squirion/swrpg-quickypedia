@@ -1,0 +1,1 @@
+# swrpg-quickypedia

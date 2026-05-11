@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/models/character.dart';
+import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/screens/campaign_input_screen.dart';
 import 'package:swrpg_quickypedia/screens/category_grid_screen.dart';
 import 'package:swrpg_quickypedia/screens/character_bio_screen.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
 import 'package:swrpg_quickypedia/widgets/character_tile.dart';
+import 'package:swrpg_quickypedia/widgets/weapon_tile.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -44,6 +46,39 @@ class HomeScreen extends ConsumerWidget {
         builder: (_) => CategoryGridScreen<Never>.comingSoon(
           title: title,
           icon: icon,
+        ),
+      ),
+    );
+  }
+
+  void _openWeaponsGrid(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CategoryGridScreen<Weapon>(
+          title: 'Weapons',
+          icon: Icons.flash_on,
+          watchItems: (ref) => ref.watch(weaponsProvider),
+          matchesQuery: (w, q) {
+            final lq = q.toLowerCase();
+            return w.name.toLowerCase().contains(lq);
+          },
+          itemBuilder: (ctx, w) => WeaponTile(
+            weapon: w,
+            onTap: () => showDialog<void>(
+              context: ctx,
+              builder: (_) => AlertDialog(
+                title: Text(w.name),
+                content: const Text('Weapon view coming soon.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          searchHint: 'Search weapons',
         ),
       ),
     );
@@ -140,8 +175,7 @@ class HomeScreen extends ConsumerWidget {
             ),
             CategoryRow(
               title: 'Weapons',
-              onTitleTap: () =>
-                  _openComingSoon(context, 'Weapons', Icons.flash_on),
+              onTitleTap: () => _openWeaponsGrid(context),
               child: const ComingSoonTile(icon: Icons.flash_on),
             ),
             CategoryRow(

@@ -18,6 +18,17 @@ class CategoryGridScreen<T> extends ConsumerStatefulWidget {
   final Widget Function(BuildContext context, T item)? itemBuilder;
   final String searchHint;
 
+  /// Optional widget shown in place of the grid when the underlying list is
+  /// empty (e.g. a "Fetch from wiki" call-to-action for system categories).
+  final Widget Function(BuildContext context, WidgetRef ref)? emptyStateBuilder;
+
+  /// Optional `AppBar` actions (e.g. a refresh button).
+  final List<Widget> Function(BuildContext context, WidgetRef ref)?
+      appBarActionsBuilder;
+
+  /// Optional widget rendered below the `AppBar` (e.g. a scrape-progress bar).
+  final Widget Function(BuildContext context, WidgetRef ref)? belowAppBarBuilder;
+
   const CategoryGridScreen({
     super.key,
     required this.title,
@@ -26,6 +37,9 @@ class CategoryGridScreen<T> extends ConsumerStatefulWidget {
     required this.matchesQuery,
     required this.itemBuilder,
     this.searchHint = 'Search',
+    this.emptyStateBuilder,
+    this.appBarActionsBuilder,
+    this.belowAppBarBuilder,
   });
 
   const CategoryGridScreen.comingSoon({
@@ -35,7 +49,10 @@ class CategoryGridScreen<T> extends ConsumerStatefulWidget {
   })  : watchItems = null,
         matchesQuery = null,
         itemBuilder = null,
-        searchHint = '';
+        searchHint = '',
+        emptyStateBuilder = null,
+        appBarActionsBuilder = null,
+        belowAppBarBuilder = null;
 
   bool get _isComingSoon => watchItems == null;
 
@@ -57,8 +74,19 @@ class _CategoryGridScreenState<T>
 
   @override
   Widget build(BuildContext context) {
+    final actions = widget.appBarActionsBuilder?.call(context, ref);
+    final belowAppBar = widget.belowAppBarBuilder?.call(context, ref);
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(
+        title: Text(widget.title),
+        actions: actions,
+        bottom: belowAppBar == null
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(4),
+                child: belowAppBar,
+              ),
+      ),
       body: widget._isComingSoon ? _buildComingSoon() : _buildGrid(),
     );
   }
@@ -130,6 +158,9 @@ class _CategoryGridScreenState<T>
               ),
             ),
             data: (all) {
+              if (all.isEmpty && widget.emptyStateBuilder != null) {
+                return widget.emptyStateBuilder!(context, ref);
+              }
               final filtered = _query.isEmpty
                   ? all
                   : all

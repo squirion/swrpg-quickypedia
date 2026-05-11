@@ -2,8 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swrpg_quickypedia/models/campaign.dart';
 import 'package:swrpg_quickypedia/models/character.dart';
+import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/services/auth_service.dart';
 import 'package:swrpg_quickypedia/services/api_client.dart';
+import 'package:swrpg_quickypedia/services/system_data_store.dart';
 
 // --- Auth ---
 
@@ -135,13 +137,44 @@ final campaignsProvider = FutureProvider.autoDispose<List<Campaign>>((ref) {
 });
 
 // --- Characters ---
+//
+// Both providers cache for the lifetime of the session (no autoDispose),
+// so revisiting the home / bio screens does NOT re-hit the API.
+// Pull-to-refresh invalidates the provider to force a re-fetch.
 
-final charactersProvider =
-    FutureProvider.autoDispose<List<Character>>((ref) async {
+final charactersProvider = FutureProvider<List<Character>>((ref) async {
   final campaignId = ref.watch(campaignIdProvider);
   if (campaignId == null || campaignId.isEmpty) {
     return [];
   }
   final apiClient = ref.watch(apiClientProvider);
   return apiClient.getCharacters(campaignId);
+});
+
+/// Full character detail (includes the bio `content`), cached per id.
+final characterDetailProvider =
+    FutureProvider.family<Character, String>((ref, characterId) async {
+  final campaignId = ref.watch(campaignIdProvider);
+  if (campaignId == null || campaignId.isEmpty) {
+    throw StateError('No campaign selected');
+  }
+  final apiClient = ref.watch(apiClientProvider);
+  return apiClient.getCharacter(campaignId, characterId);
+});
+
+// --- System data: weapons ---
+//
+// System-dependent categories (weapons, armor, gear, vehicles, …) are
+// shared across all users of the same RPG system. The data is scraped
+// from the public Fandom wiki, cached on-device as JSON, and re-fetched
+// on user request. This is the read-side; the scrape pipeline lives
+// in lib/services/wiki_scraper.dart and is wired up in a later commit.
+
+final weaponsStoreProvider = Provider<SystemDataStore>((_) {
+  return const SystemDataStore('weapons');
+});
+
+final weaponsProvider = FutureProvider<List<Weapon>>((ref) async {
+  final store = ref.watch(weaponsStoreProvider);
+  return store.read<Weapon>(Weapon.fromJson);
 });

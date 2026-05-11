@@ -5,7 +5,9 @@ import 'package:swrpg_quickypedia/models/character.dart';
 import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/services/auth_service.dart';
 import 'package:swrpg_quickypedia/services/api_client.dart';
+import 'package:swrpg_quickypedia/services/parsers/weapon_parser.dart';
 import 'package:swrpg_quickypedia/services/system_data_store.dart';
+import 'package:swrpg_quickypedia/services/wiki_scraper.dart';
 
 // --- Auth ---
 
@@ -178,3 +180,63 @@ final weaponsProvider = FutureProvider<List<Weapon>>((ref) async {
   final store = ref.watch(weaponsStoreProvider);
   return store.read<Weapon>(Weapon.fromJson);
 });
+
+/// Lifecycle state for a category scrape (idle / running / error).
+sealed class ScrapeState {
+  const ScrapeState();
+}
+
+class ScrapeIdle extends ScrapeState {
+  const ScrapeIdle();
+}
+
+class ScrapeRunning extends ScrapeState {
+  /// `total == 0` until the index walk finishes — render as
+  /// indeterminate when that's the case.
+  final int done;
+  final int total;
+  const ScrapeRunning(this.done, this.total);
+}
+
+class ScrapeError extends ScrapeState {
+  final String message;
+  const ScrapeError(this.message);
+}
+
+const String _weaponsCategoryUrl =
+    'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Weapon';
+
+final weaponsScrapeProvider =
+    NotifierProvider<WeaponsScrapeNotifier, ScrapeState>(
+  WeaponsScrapeNotifier.new,
+);
+
+class WeaponsScrapeNotifier extends Notifier<ScrapeState> {
+  @override
+  ScrapeState build() => const ScrapeIdle();
+
+  Future<void> refresh() async {
+    if (state is ScrapeRunning) return;
+    state = const ScrapeRunning(0, 0);
+    final scraper = WikiScraper();
+    try {
+      final weapons = await scraper.scrapeCategory<Weapon>(
+        categoryUrl: _weaponsCategoryUrl,
+        parser: parseWeaponPage,
+        onProgress: (done, total) {
+          state = ScrapeRunning(done, total);
+        },
+      );
+      await ref.read(weaponsStoreProvider).write<Weapon>(
+            weapons,
+            (w) => w.toJson(),
+          );
+      ref.invalidate(weaponsProvider);
+      state = const ScrapeIdle();
+    } catch (e) {
+      state = ScrapeError(e.toString());
+    } finally {
+      scraper.close();
+    }
+  }
+}

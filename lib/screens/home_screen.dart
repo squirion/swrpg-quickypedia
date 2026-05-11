@@ -79,6 +79,75 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
           searchHint: 'Search weapons',
+          appBarActionsBuilder: (ctx, ref) {
+            final scrape = ref.watch(weaponsScrapeProvider);
+            final running = scrape is ScrapeRunning;
+            return [
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Fetch from wiki',
+                onPressed: running
+                    ? null
+                    : () => ref
+                        .read(weaponsScrapeProvider.notifier)
+                        .refresh(),
+              ),
+            ];
+          },
+          belowAppBarBuilder: (ctx, ref) {
+            final scrape = ref.watch(weaponsScrapeProvider);
+            return _WeaponsScrapeBanner(state: scrape);
+          },
+          emptyStateBuilder: (ctx, ref) {
+            final scrape = ref.watch(weaponsScrapeProvider);
+            final running = scrape is ScrapeRunning;
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.flash_on,
+                        size: 80, color: Colors.grey.shade400),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No weapons cached yet',
+                      style: Theme.of(ctx).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Pull the catalogue from the SWRPG FFG wiki to '
+                      'populate this grid. The data is cached on-device '
+                      'and only refetched when you tap refresh.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(ctx)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: Colors.grey.shade700),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.cloud_download),
+                      label: const Text('Fetch weapons from wiki'),
+                      onPressed: running
+                          ? null
+                          : () => ref
+                              .read(weaponsScrapeProvider.notifier)
+                              .refresh(),
+                    ),
+                    if (scrape is ScrapeError) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        scrape.message,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.red.shade700),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -200,5 +269,72 @@ class HomeScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// Thin status strip rendered below the AppBar on the weapons grid.
+/// Shows a progress bar + "Fetched N / M" label while scraping, and an
+/// error message bar (with retry button) when the scrape failed.
+class _WeaponsScrapeBanner extends ConsumerWidget
+    implements PreferredSizeWidget {
+  final ScrapeState state;
+  const _WeaponsScrapeBanner({required this.state});
+
+  @override
+  Size get preferredSize {
+    if (state is ScrapeRunning) return const Size.fromHeight(28);
+    if (state is ScrapeError) return const Size.fromHeight(40);
+    return Size.zero;
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = state;
+    if (s is ScrapeRunning) {
+      final indeterminate = s.total == 0;
+      final value = indeterminate ? null : s.done / s.total;
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          LinearProgressIndicator(value: value),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                indeterminate
+                    ? 'Discovering weapons…'
+                    : 'Fetched ${s.done} / ${s.total}',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    if (s is ScrapeError) {
+      return Container(
+        color: Colors.red.shade100,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Scrape failed: ${s.message}',
+                style: TextStyle(color: Colors.red.shade900, fontSize: 12),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              onPressed: () =>
+                  ref.read(weaponsScrapeProvider.notifier).refresh(),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }

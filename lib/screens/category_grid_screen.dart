@@ -27,7 +27,11 @@ class CategoryGridScreen<T> extends ConsumerStatefulWidget {
       appBarActionsBuilder;
 
   /// Optional widget rendered below the `AppBar` (e.g. a scrape-progress bar).
-  final Widget Function(BuildContext context, WidgetRef ref)? belowAppBarBuilder;
+  /// Must be a `PreferredSizeWidget` so the `AppBar` can reserve the right
+  /// height — return `PreferredSize` with `Size.zero` when there's nothing
+  /// to show.
+  final PreferredSizeWidget Function(BuildContext context, WidgetRef ref)?
+      belowAppBarBuilder;
 
   const CategoryGridScreen({
     super.key,
@@ -80,12 +84,7 @@ class _CategoryGridScreenState<T>
       appBar: AppBar(
         title: Text(widget.title),
         actions: actions,
-        bottom: belowAppBar == null
-            ? null
-            : PreferredSize(
-                preferredSize: const Size.fromHeight(4),
-                child: belowAppBar,
-              ),
+        bottom: belowAppBar,
       ),
       body: widget._isComingSoon ? _buildComingSoon() : _buildGrid(),
     );

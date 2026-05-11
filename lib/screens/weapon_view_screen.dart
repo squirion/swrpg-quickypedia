@@ -1,6 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:swrpg_quickypedia/models/item_quality.dart';
 import 'package:swrpg_quickypedia/models/weapon.dart';
+import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/theme.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_placeholder.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -9,12 +12,20 @@ import 'package:url_launcher/url_launcher.dart';
 /// `swrpg-weapon-view` Claude Design handoff: breadcrumbs, hero image
 /// with corner brackets and overlaid title/lede, numbered sections for
 /// Specifications, Game Mechanics, and Reference.
-class WeaponViewScreen extends StatelessWidget {
+class WeaponViewScreen extends ConsumerWidget {
   final Weapon weapon;
   const WeaponViewScreen({super.key, required this.weapon});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final qualitiesAsync = ref.watch(itemQualitiesProvider);
+    final qualities = qualitiesAsync.asData?.value ?? const {};
+
+    final hasMechanics =
+        weapon.mechanics != null && weapon.mechanics!.isNotEmpty;
+    final hasSpecial = weapon.specialQualities.isNotEmpty;
+    final showMechanicsSection = hasMechanics || hasSpecial;
+
     return Scaffold(
       appBar: AppBar(title: Text(weapon.name)),
       body: ListView(
@@ -27,11 +38,15 @@ class WeaponViewScreen extends StatelessWidget {
           const _SectionHeading(number: '01', title: 'Specifications'),
           const SizedBox(height: 14),
           _StatBlock(weapon: weapon),
-          if (weapon.mechanics != null && weapon.mechanics!.isNotEmpty) ...[
+          if (showMechanicsSection) ...[
             const SizedBox(height: 28),
             const _SectionHeading(number: '02', title: 'Game Mechanics'),
             const SizedBox(height: 14),
-            _Prose(text: weapon.mechanics!),
+            _MechanicsSection(
+              specialQualities: weapon.specialQualities,
+              prose: weapon.mechanics,
+              qualities: qualities,
+            ),
           ],
           if (weapon.sourceUrl != null) ...[
             const SizedBox(height: 28),
@@ -40,6 +55,128 @@ class WeaponViewScreen extends StatelessWidget {
             _SourceLink(url: weapon.sourceUrl!),
           ],
         ],
+      ),
+    );
+  }
+}
+
+// ── Game Mechanics ──────────────────────────────────────────────────────
+
+/// Renders the Game Mechanics block: per-quality definition rows
+/// (name → description) resolved against the qualities glossary, plus
+/// any free-form prose the parser pulled out below the stat image.
+/// Unmatched qualities still appear, just without a description.
+class _MechanicsSection extends StatelessWidget {
+  final List<String> specialQualities;
+  final String? prose;
+  final Map<String, ItemQuality> qualities;
+
+  const _MechanicsSection({
+    required this.specialQualities,
+    required this.prose,
+    required this.qualities,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < specialQualities.length; i++) {
+      final raw = specialQualities[i];
+      final key = ItemQuality.lookupKey(raw);
+      final match = qualities[key];
+      rows.add(_MechanicRow(
+        name: raw,
+        description: match?.description,
+        first: i == 0,
+      ));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (rows.isNotEmpty) ...rows,
+        if (prose != null && prose!.isNotEmpty) ...[
+          if (rows.isNotEmpty) const SizedBox(height: 18),
+          _Prose(text: prose!),
+        ],
+      ],
+    );
+  }
+}
+
+class _MechanicRow extends StatelessWidget {
+  final String name;
+  final String? description;
+  final bool first;
+
+  const _MechanicRow({
+    required this.name,
+    required this.description,
+    required this.first,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        border: Border(
+          top: first
+              ? BorderSide.none
+              : const BorderSide(color: AppColors.line),
+        ),
+      ),
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          final wide = constraints.maxWidth >= 480;
+          if (wide) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: 180, child: _nameLabel()),
+                const SizedBox(width: 24),
+                Expanded(child: _descBody()),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _nameLabel(),
+              const SizedBox(height: 6),
+              _descBody(),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _nameLabel() => Text(
+        name.toUpperCase(),
+        style: AppFonts.display(
+          const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 1.2,
+            color: AppColors.accent,
+            height: 1.1,
+          ),
+        ),
+      );
+
+  Widget _descBody() {
+    final text = description ?? 'No description in glossary yet.';
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 14.5,
+        height: 1.6,
+        color: description == null
+            ? AppColors.inkFaint
+            : AppColors.inkDim,
+        fontStyle:
+            description == null ? FontStyle.italic : FontStyle.normal,
       ),
     );
   }

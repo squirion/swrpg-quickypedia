@@ -215,8 +215,9 @@ class WeaponsScrapeNotifier extends Notifier<ScrapeState> {
   @override
   ScrapeState build() => const ScrapeIdle();
 
-  Future<void> refresh() async {
-    if (state is ScrapeRunning) return;
+  /// Returns the number of weapons saved (0 on parser drop, -1 on error).
+  Future<int> refresh() async {
+    if (state is ScrapeRunning) return -1;
     state = const ScrapeRunning(0, 0);
     final scraper = WikiScraper();
     try {
@@ -233,8 +234,10 @@ class WeaponsScrapeNotifier extends Notifier<ScrapeState> {
           );
       ref.invalidate(weaponsProvider);
       state = const ScrapeIdle();
+      return weapons.length;
     } catch (e) {
       state = ScrapeError(e.toString());
+      return -1;
     } finally {
       scraper.close();
     }

@@ -52,6 +52,20 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _runWeaponsScrape(BuildContext context, WidgetRef ref) async {
+    final n = await ref.read(weaponsScrapeProvider.notifier).refresh();
+    if (!context.mounted) return;
+    final String msg;
+    if (n < 0) {
+      msg = 'Scrape failed.';
+    } else if (n == 0) {
+      msg = 'Scrape finished but no weapons were parsed.';
+    } else {
+      msg = 'Saved $n weapons.';
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   void _openWeaponsGrid(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -81,9 +95,7 @@ class HomeScreen extends ConsumerWidget {
                 tooltip: 'Fetch from wiki',
                 onPressed: running
                     ? null
-                    : () => ref
-                        .read(weaponsScrapeProvider.notifier)
-                        .refresh(),
+                    : () => _runWeaponsScrape(ctx, ref),
               ),
             ];
           },
@@ -122,11 +134,8 @@ class HomeScreen extends ConsumerWidget {
                     FilledButton.icon(
                       icon: const Icon(Icons.cloud_download),
                       label: const Text('Fetch weapons from wiki'),
-                      onPressed: running
-                          ? null
-                          : () => ref
-                              .read(weaponsScrapeProvider.notifier)
-                              .refresh(),
+                      onPressed:
+                          running ? null : () => _runWeaponsScrape(ctx, ref),
                     ),
                     if (scrape is ScrapeError) ...[
                       const SizedBox(height: 12),
@@ -149,6 +158,7 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final characters = ref.watch(charactersProvider);
+    final weapons = ref.watch(weaponsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -238,7 +248,39 @@ class HomeScreen extends ConsumerWidget {
             CategoryRow(
               title: 'Weapons',
               onTitleTap: () => _openWeaponsGrid(context),
-              child: const ComingSoonTile(icon: Icons.flash_on),
+              child: weapons.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Center(child: Text('Failed: $error')),
+                ),
+                data: (list) {
+                  if (list.isEmpty) {
+                    return const ComingSoonTile(icon: Icons.flash_on);
+                  }
+                  return ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (_, i) {
+                      final w = list[i];
+                      return SizedBox(
+                        width: 120,
+                        child: WeaponTile(
+                          weapon: w,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => WeaponViewScreen(weapon: w),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
             CategoryRow(
               title: 'Armor',

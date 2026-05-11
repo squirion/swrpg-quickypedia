@@ -5,6 +5,7 @@ import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/screens/category_grid_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapon_view_screen.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
+import 'package:swrpg_quickypedia/widgets/weapon_sort_menu.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_tile.dart';
 
 /// Intermediate screen for weapons: one horizontal row per weapon type
@@ -144,6 +145,7 @@ class WeaponsTypeScreen extends ConsumerWidget {
             ),
           ),
           searchHint: 'Search $type',
+          appBarActionsBuilder: (_, _) => const [WeaponSortMenu()],
         ),
       ),
     );

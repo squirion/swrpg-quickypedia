@@ -4,11 +4,13 @@ import 'package:swrpg_quickypedia/models/campaign.dart';
 import 'package:swrpg_quickypedia/models/character.dart';
 import 'package:swrpg_quickypedia/models/item_quality.dart';
 import 'package:swrpg_quickypedia/models/weapon.dart';
+import 'package:swrpg_quickypedia/models/weapon_sort.dart';
 import 'package:swrpg_quickypedia/services/auth_service.dart';
 import 'package:swrpg_quickypedia/services/api_client.dart';
 import 'package:swrpg_quickypedia/services/parsers/item_qualities_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/weapon_parser.dart';
 import 'package:swrpg_quickypedia/services/system_data_store.dart';
+import 'package:swrpg_quickypedia/services/weapon_sort.dart';
 import 'package:swrpg_quickypedia/services/wiki_scraper.dart';
 
 // --- Auth ---
@@ -178,9 +180,32 @@ final weaponsStoreProvider = Provider<SystemDataStore>((_) {
   return const SystemDataStore('weapons');
 });
 
+/// Current sort preference, applied to every weapon list in the app.
+/// Defaults to rarity ascending (most common first), with name as the
+/// implicit secondary sort handled by [compareWeapons].
+final weaponSortProvider =
+    NotifierProvider<WeaponSortNotifier, WeaponSort>(WeaponSortNotifier.new);
+
+class WeaponSortNotifier extends Notifier<WeaponSort> {
+  @override
+  WeaponSort build() => WeaponSort.defaultSort;
+
+  /// Selecting the currently-active attribute toggles direction;
+  /// selecting a different attribute keeps the current direction so
+  /// the user doesn't have to re-flip every time they change axis.
+  void select(WeaponSortAttr attr) {
+    state = state.attr == attr
+        ? state.copyWith(ascending: !state.ascending)
+        : state.copyWith(attr: attr);
+  }
+}
+
 final weaponsProvider = FutureProvider<List<Weapon>>((ref) async {
   final store = ref.watch(weaponsStoreProvider);
-  return store.read<Weapon>(Weapon.fromJson);
+  final sort = ref.watch(weaponSortProvider);
+  final list = await store.read<Weapon>(Weapon.fromJson);
+  list.sort((a, b) => compareWeapons(a, b, sort));
+  return list;
 });
 
 /// Lifecycle state for a category scrape (idle / running / error).

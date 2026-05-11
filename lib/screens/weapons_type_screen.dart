@@ -174,14 +174,50 @@ class WeaponsTypeScreen extends ConsumerWidget {
     if (confirmed != true) return;
     if (!context.mounted) return;
 
-    final n = await ref.read(weaponsScrapeProvider.notifier).refresh();
+    final result = await ref.read(weaponsScrapeProvider.notifier).refresh();
     if (!context.mounted) return;
-    final msg = n < 0
-        ? 'Scrape failed.'
-        : n == 0
-            ? 'Scrape finished but no weapons were parsed.'
-            : 'Saved $n weapons.';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+
+    final hasError =
+        result.weaponsError != null || result.qualitiesError != null;
+
+    if (hasError) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Scrape report'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(result.weaponsError == null
+                    ? 'Weapons: saved ${result.weapons}.'
+                    : 'Weapons FAILED:\n${result.weaponsError}'),
+                const SizedBox(height: 12),
+                Text(result.qualitiesError == null
+                    ? 'Qualities: saved ${result.qualities}.'
+                    : 'Qualities FAILED:\n${result.qualitiesError}'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Saved ${result.weapons} weapons · ${result.qualities} qualities',
+        ),
+      ),
+    );
   }
 }
 

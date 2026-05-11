@@ -28,13 +28,17 @@ class ApiClient {
     return _client!;
   }
 
+  static const _jsonHeaders = {'Accept': 'application/json'};
+
   Future<Map<String, dynamic>> _getJson(String path) async {
-    final response = await _httpClient.get(Uri.parse('$_baseUrl$path'));
+    final uri = Uri.parse('$_baseUrl$path');
+    final response = await _httpClient.get(uri, headers: _jsonHeaders);
     return _handleResponse(response) as Map<String, dynamic>;
   }
 
   Future<List<dynamic>> _getJsonList(String path) async {
-    final response = await _httpClient.get(Uri.parse('$_baseUrl$path'));
+    final uri = Uri.parse('$_baseUrl$path');
+    final response = await _httpClient.get(uri, headers: _jsonHeaders);
     return _handleResponse(response) as List<dynamic>;
   }
 

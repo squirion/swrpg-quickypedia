@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/models/campaign.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
-import 'package:swrpg_quickypedia/screens/character_list_screen.dart';
+import 'package:swrpg_quickypedia/screens/home_screen.dart';
 
 class CampaignInputScreen extends ConsumerStatefulWidget {
   const CampaignInputScreen({super.key});
@@ -51,7 +51,7 @@ class _CampaignInputScreenState extends ConsumerState<CampaignInputScreen> {
 
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const CharacterListScreen()),
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
         );
       }
     } catch (e) {

@@ -1,0 +1,170 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:swrpg_quickypedia/models/character.dart';
+import 'package:swrpg_quickypedia/providers/providers.dart';
+import 'package:swrpg_quickypedia/screens/campaign_input_screen.dart';
+import 'package:swrpg_quickypedia/screens/category_grid_screen.dart';
+import 'package:swrpg_quickypedia/screens/character_bio_screen.dart';
+import 'package:swrpg_quickypedia/widgets/category_row.dart';
+import 'package:swrpg_quickypedia/widgets/character_tile.dart';
+
+class HomeScreen extends ConsumerWidget {
+  const HomeScreen({super.key});
+
+  void _openCharactersGrid(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CategoryGridScreen<Character>(
+          title: 'Characters',
+          icon: Icons.person,
+          watchItems: (ref) => ref.watch(charactersProvider),
+          matchesQuery: (c, q) {
+            final lq = q.toLowerCase();
+            if (c.name.toLowerCase().contains(lq)) return true;
+            final owner = c.author?.username.toLowerCase();
+            return owner != null && owner.contains(lq);
+          },
+          itemBuilder: (ctx, c) => CharacterTile(
+            character: c,
+            onTap: () => Navigator.of(ctx).push(
+              MaterialPageRoute(
+                builder: (_) => CharacterBioScreen(character: c),
+              ),
+            ),
+          ),
+          searchHint: 'Search by name or owner',
+        ),
+      ),
+    );
+  }
+
+  void _openComingSoon(BuildContext context, String title, IconData icon) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CategoryGridScreen<Never>.comingSoon(
+          title: title,
+          icon: icon,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final characters = ref.watch(charactersProvider);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('SWRPG Quickypedia'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.swap_horiz),
+            tooltip: 'Change campaign',
+            onPressed: () {
+              ref.read(campaignIdProvider.notifier).setCampaign(null);
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (_) => const CampaignInputScreen()),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sign out',
+            onPressed: () => ref.read(authStateProvider.notifier).signOut(),
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          ref.invalidate(charactersProvider);
+          await ref.read(charactersProvider.future);
+        },
+        child: ListView(
+          children: [
+            CategoryRow(
+              title: 'Characters',
+              onTitleTap: () => _openCharactersGrid(context),
+              child: characters.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Center(
+                    child: Text('Failed to load characters: $error'),
+                  ),
+                ),
+                data: (list) {
+                  if (list.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Center(
+                        child: Text('No characters in this campaign.'),
+                      ),
+                    );
+                  }
+                  return ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (_, i) {
+                      final c = list[i];
+                      return SizedBox(
+                        width: 120,
+                        child: CharacterTile(
+                          character: c,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  CharacterBioScreen(character: c),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            CategoryRow(
+              title: 'Locations',
+              onTitleTap: () =>
+                  _openComingSoon(context, 'Locations', Icons.public),
+              child: const ComingSoonTile(icon: Icons.public),
+            ),
+            CategoryRow(
+              title: 'Events',
+              onTitleTap: () =>
+                  _openComingSoon(context, 'Events', Icons.event),
+              child: const ComingSoonTile(icon: Icons.event),
+            ),
+            CategoryRow(
+              title: 'Weapons',
+              onTitleTap: () =>
+                  _openComingSoon(context, 'Weapons', Icons.flash_on),
+              child: const ComingSoonTile(icon: Icons.flash_on),
+            ),
+            CategoryRow(
+              title: 'Armor',
+              onTitleTap: () =>
+                  _openComingSoon(context, 'Armor', Icons.shield),
+              child: const ComingSoonTile(icon: Icons.shield),
+            ),
+            CategoryRow(
+              title: 'Gear',
+              onTitleTap: () =>
+                  _openComingSoon(context, 'Gear', Icons.inventory_2),
+              child: const ComingSoonTile(icon: Icons.inventory_2),
+            ),
+            CategoryRow(
+              title: 'Vehicles',
+              onTitleTap: () => _openComingSoon(
+                  context, 'Vehicles', Icons.directions_car),
+              child: const ComingSoonTile(icon: Icons.directions_car),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

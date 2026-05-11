@@ -6,6 +6,7 @@ import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/screens/campaign_input_screen.dart';
 import 'package:swrpg_quickypedia/screens/category_grid_screen.dart';
 import 'package:swrpg_quickypedia/screens/character_bio_screen.dart';
+import 'package:swrpg_quickypedia/screens/weapon_view_screen.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
 import 'package:swrpg_quickypedia/widgets/character_tile.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_tile.dart';
@@ -64,17 +65,9 @@ class HomeScreen extends ConsumerWidget {
           },
           itemBuilder: (ctx, w) => WeaponTile(
             weapon: w,
-            onTap: () => showDialog<void>(
-              context: ctx,
-              builder: (_) => AlertDialog(
-                title: Text(w.name),
-                content: const Text('Weapon view coming soon.'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(ctx).pop(),
-                    child: const Text('Close'),
-                  ),
-                ],
+            onTap: () => Navigator.of(ctx).push(
+              MaterialPageRoute(
+                builder: (_) => WeaponViewScreen(weapon: w),
               ),
             ),
           ),

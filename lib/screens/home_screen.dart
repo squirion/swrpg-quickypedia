@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/models/character.dart';
-import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/screens/campaign_input_screen.dart';
 import 'package:swrpg_quickypedia/screens/category_grid_screen.dart';
 import 'package:swrpg_quickypedia/screens/character_bio_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapon_view_screen.dart';
+import 'package:swrpg_quickypedia/screens/weapons_type_screen.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
 import 'package:swrpg_quickypedia/widgets/character_tile.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_tile.dart';
@@ -52,106 +52,9 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _runWeaponsScrape(BuildContext context, WidgetRef ref) async {
-    final n = await ref.read(weaponsScrapeProvider.notifier).refresh();
-    if (!context.mounted) return;
-    final String msg;
-    if (n < 0) {
-      msg = 'Scrape failed.';
-    } else if (n == 0) {
-      msg = 'Scrape finished but no weapons were parsed.';
-    } else {
-      msg = 'Saved $n weapons.';
-    }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  void _openWeaponsGrid(BuildContext context) {
+  void _openWeaponsTypeScreen(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CategoryGridScreen<Weapon>(
-          title: 'Weapons',
-          icon: Icons.flash_on,
-          watchItems: (ref) => ref.watch(weaponsProvider),
-          matchesQuery: (w, q) {
-            final lq = q.toLowerCase();
-            return w.name.toLowerCase().contains(lq);
-          },
-          itemBuilder: (ctx, w) => WeaponTile(
-            weapon: w,
-            onTap: () => Navigator.of(ctx).push(
-              MaterialPageRoute(
-                builder: (_) => WeaponViewScreen(weapon: w),
-              ),
-            ),
-          ),
-          searchHint: 'Search weapons',
-          appBarActionsBuilder: (ctx, ref) {
-            final scrape = ref.watch(weaponsScrapeProvider);
-            final running = scrape is ScrapeRunning;
-            return [
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Fetch from wiki',
-                onPressed: running
-                    ? null
-                    : () => _runWeaponsScrape(ctx, ref),
-              ),
-            ];
-          },
-          belowAppBarBuilder: (ctx, ref) {
-            final scrape = ref.watch(weaponsScrapeProvider);
-            return _WeaponsScrapeBanner(state: scrape);
-          },
-          emptyStateBuilder: (ctx, ref) {
-            final scrape = ref.watch(weaponsScrapeProvider);
-            final running = scrape is ScrapeRunning;
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.flash_on,
-                        size: 80, color: Colors.grey.shade400),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No weapons cached yet',
-                      style: Theme.of(ctx).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Pull the catalogue from the SWRPG FFG wiki to '
-                      'populate this grid. The data is cached on-device '
-                      'and only refetched when you tap refresh.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(ctx)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(color: Colors.grey.shade700),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.cloud_download),
-                      label: const Text('Fetch weapons from wiki'),
-                      onPressed:
-                          running ? null : () => _runWeaponsScrape(ctx, ref),
-                    ),
-                    if (scrape is ScrapeError) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        scrape.message,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.red.shade700),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => const WeaponsTypeScreen()),
     );
   }
 
@@ -247,7 +150,7 @@ class HomeScreen extends ConsumerWidget {
             ),
             CategoryRow(
               title: 'Weapons',
-              onTitleTap: () => _openWeaponsGrid(context),
+              onTitleTap: () => _openWeaponsTypeScreen(context),
               child: weapons.when(
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -307,69 +210,3 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-/// Thin status strip rendered below the AppBar on the weapons grid.
-/// Shows a progress bar + "Fetched N / M" label while scraping, and an
-/// error message bar (with retry button) when the scrape failed.
-class _WeaponsScrapeBanner extends ConsumerWidget
-    implements PreferredSizeWidget {
-  final ScrapeState state;
-  const _WeaponsScrapeBanner({required this.state});
-
-  @override
-  Size get preferredSize {
-    if (state is ScrapeRunning) return const Size.fromHeight(28);
-    if (state is ScrapeError) return const Size.fromHeight(40);
-    return Size.zero;
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final s = state;
-    if (s is ScrapeRunning) {
-      final indeterminate = s.total == 0;
-      final value = indeterminate ? null : s.done / s.total;
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          LinearProgressIndicator(value: value),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                indeterminate
-                    ? 'Discovering weapons…'
-                    : 'Fetched ${s.done} / ${s.total}',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-    if (s is ScrapeError) {
-      return Container(
-        color: Colors.red.shade100,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Scrape failed: ${s.message}',
-                style: TextStyle(color: Colors.red.shade900, fontSize: 12),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            TextButton(
-              onPressed: () =>
-                  ref.read(weaponsScrapeProvider.notifier).refresh(),
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      );
-    }
-    return const SizedBox.shrink();
-  }
-}

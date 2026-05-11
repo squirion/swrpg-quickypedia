@@ -150,6 +150,30 @@ class WeaponsTypeScreen extends ConsumerWidget {
   }
 
   Future<void> _runScrape(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Fetch weapons from wiki?'),
+        content: const Text(
+          'This will scrape every weapon page on the SWRPG FFG Fandom '
+          'wiki. The process can take a few minutes and uses your data '
+          'connection. Existing cached weapons will be replaced.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Fetch'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+
     final n = await ref.read(weaponsScrapeProvider.notifier).refresh();
     if (!context.mounted) return;
     final msg = n < 0

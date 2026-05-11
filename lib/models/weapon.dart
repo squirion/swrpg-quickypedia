@@ -15,6 +15,7 @@ class Weapon {
   final String? rarity;
   final List<String> specialQualities;
   final String? description;
+  final String? mechanics;
   final String? sourceUrl;
   final String? imageUrl;
 
@@ -30,6 +31,7 @@ class Weapon {
     this.rarity,
     this.specialQualities = const [],
     this.description,
+    this.mechanics,
     this.sourceUrl,
     this.imageUrl,
   });
@@ -51,6 +53,7 @@ class Weapon {
       rarity: json['rarity'] as String?,
       specialQualities: specials,
       description: json['description'] as String?,
+      mechanics: json['mechanics'] as String?,
       sourceUrl: json['sourceUrl'] as String?,
       imageUrl: json['imageUrl'] as String?,
     );
@@ -68,6 +71,7 @@ class Weapon {
         if (rarity != null) 'rarity': rarity,
         if (specialQualities.isNotEmpty) 'specialQualities': specialQualities,
         if (description != null) 'description': description,
+        if (mechanics != null) 'mechanics': mechanics,
         if (sourceUrl != null) 'sourceUrl': sourceUrl,
         if (imageUrl != null) 'imageUrl': imageUrl,
       };

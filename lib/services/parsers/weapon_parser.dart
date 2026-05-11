@@ -28,6 +28,8 @@ Weapon? parseWeaponPage(Document doc, String sourceUrl) {
   final fields = _parseAltStats(altStats);
   if (fields.isEmpty) return null;
 
+  final (description, mechanics) = _extractDescriptionAndMechanics(doc, statImg);
+
   return Weapon(
     name: name,
     skill: fields['skill'],
@@ -39,9 +41,13 @@ Weapon? parseWeaponPage(Document doc, String sourceUrl) {
     price: _normalizeValue(fields['price']),
     rarity: _normalizeValue(fields['rarity']),
     specialQualities: _splitSpecial(fields['special']),
-    description: _extractLeadParagraph(doc),
+    description: description,
+    mechanics: mechanics,
     sourceUrl: sourceUrl,
-    imageUrl: _cleanImageUrl(statImg.attributes['src']),
+    // imageUrl intentionally null: Fandom rarely has a usable photo (most
+    // pages embed a re-render of the stat block image). A future fetcher
+    // will populate this from another source.
+    imageUrl: null,
   );
 }
 
@@ -67,18 +73,6 @@ Element? _findStatImage(Document doc) {
     return img;
   }
   return null;
-}
-
-/// Trim the Fandom cache-buster query off image URLs so the same image
-/// across revisions has a stable cache key. Returns `null` for empty
-/// or lazy-load placeholders (Fandom sometimes serves `data:image/gif…`
-/// inline placeholders and the real URL only in `data-src`).
-String? _cleanImageUrl(String? raw) {
-  if (raw == null) return null;
-  final trimmed = raw.trim();
-  if (trimmed.isEmpty) return null;
-  if (trimmed.startsWith('data:')) return null;
-  return trimmed;
 }
 
 /// "Skill Ranged (Light) Range Medium Encumbrance 2 …" →
@@ -125,18 +119,74 @@ List<String> _splitSpecial(String? raw) {
       .toList(growable: false);
 }
 
-String? _extractLeadParagraph(Document doc) {
+/// Splits the page's prose into the `description` (before the stat image)
+/// and `mechanics` (after the stat image). The wiki convention is:
+///   1. narrative description paragraph(s)
+///   2. optional "Models Include:" line — skipped, it's not prose
+///   3. h2 with the weapon's name in caps
+///   4. <p><img></p> with the stat block image
+///   5. game-mechanics paragraph(s)
+/// Citation markers like `[1]` are stripped. Paragraphs are joined with
+/// a blank line so the UI can re-split them for paragraph spacing.
+(String?, String?) _extractDescriptionAndMechanics(
+  Document doc,
+  Element statImg,
+) {
   final container = doc.querySelector('.mw-parser-output');
-  if (container == null) return null;
-  for (final p in container.querySelectorAll('p')) {
-    final paragraphs = htmlToParagraphs(p.outerHtml);
-    if (paragraphs.isEmpty) continue;
-    final text = _stripCitations(paragraphs.first);
-    if (text.length < 20) continue;
-    return text;
+  if (container == null) return (null, null);
+
+  final statParent = _enclosingParagraph(statImg) ?? statImg;
+  final paragraphs = container.querySelectorAll('p');
+  if (paragraphs.isEmpty) return (null, null);
+
+  final statIndex = paragraphs.indexWhere((p) =>
+      p == statParent || p.querySelectorAll('img').contains(statImg));
+  if (statIndex < 0) return (null, null);
+
+  String? joinProse(Iterable<Element> ps) {
+    final chunks = <String>[];
+    for (final p in ps) {
+      if (_isInsideBlockquote(p)) continue;
+      if (p.querySelector('img') != null) continue;
+      final lines = htmlToParagraphs(p.outerHtml);
+      if (lines.isEmpty) continue;
+      final text = _stripCitations(lines.first);
+      if (text.length < 20) continue;
+      if (_looksLikeModelsList(text)) continue;
+      chunks.add(text);
+    }
+    if (chunks.isEmpty) return null;
+    return chunks.join('\n\n');
+  }
+
+  final description = joinProse(paragraphs.take(statIndex));
+  final mechanics = joinProse(paragraphs.skip(statIndex + 1));
+  return (description, mechanics);
+}
+
+Element? _enclosingParagraph(Element el) {
+  Element? cur = el.parent;
+  while (cur != null) {
+    if (cur.localName == 'p') return cur;
+    cur = cur.parent;
   }
   return null;
 }
+
+bool _isInsideBlockquote(Element el) {
+  Element? cur = el.parent;
+  while (cur != null) {
+    if (cur.localName == 'blockquote') return true;
+    cur = cur.parent;
+  }
+  return false;
+}
+
+/// "Models Include: BlasTech DT-57…" appears on many wiki pages as a
+/// manufacturer/model list. It's not narrative description and not game
+/// mechanics, so we drop it from both buckets.
+bool _looksLikeModelsList(String text) =>
+    RegExp(r'^Models? Includes?\s*:', caseSensitive: false).hasMatch(text);
 
 /// Strip inline `[1]` / `[2]` citation markers that the wiki injects.
 String _stripCitations(String text) =>

@@ -4,6 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/screens/login_screen.dart';
 import 'package:swrpg_quickypedia/screens/campaign_input_screen.dart';
+import 'package:swrpg_quickypedia/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,10 +19,7 @@ class SwrpgQuickypediaApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'SWRPG Quickypedia',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
+      theme: buildAppTheme(),
       home: const AuthGate(),
     );
   }

@@ -1,8 +1,11 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/models/weapon.dart';
+import 'package:swrpg_quickypedia/models/weapon_sort.dart';
+import 'package:swrpg_quickypedia/providers/providers.dart';
 
-class WeaponTile extends StatelessWidget {
+class WeaponTile extends ConsumerWidget {
   final Weapon weapon;
   final VoidCallback onTap;
 
@@ -13,10 +16,24 @@ class WeaponTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final rarity = _parseRarity(weapon.rarity);
     final accent = _rarityColor(rarity);
     final glow = _rarityGlow(rarity, accent);
+    final sort = ref.watch(weaponSortProvider);
+
+    // Price is always shown bottom-right when known; when the user is
+    // sorting by something other than price, we add that attribute's
+    // value as a second badge in the bottom-left so the visual ordering
+    // is justified. Rarity also skips the badge because the tile's
+    // colored outline already conveys it.
+    final secondaryAttr = switch (sort.attr) {
+      WeaponSortAttr.price || WeaponSortAttr.rarity => null,
+      _ => sort.attr,
+    };
+    final secondaryValue = secondaryAttr == null
+        ? null
+        : _displayValue(weapon, secondaryAttr);
 
     return InkWell(
       onTap: onTap,
@@ -60,6 +77,20 @@ class WeaponTile extends StatelessWidget {
                     bottom: 6,
                     right: 8,
                     child: _PriceBadge(price: weapon.price!),
+                  ),
+                if (secondaryAttr != null && secondaryValue != null)
+                  Positioned(
+                    bottom: 6,
+                    left: 8,
+                    // Range values are already self-explanatory words
+                    // ("Short", "Long", …), so skip the "RNG" prefix
+                    // to save horizontal space on the tile.
+                    child: _StatBadge(
+                      label: secondaryAttr == WeaponSortAttr.range
+                          ? null
+                          : secondaryAttr.shortLabel,
+                      value: secondaryValue,
+                    ),
                   ),
               ],
             ),
@@ -152,6 +183,63 @@ class _PriceBadge extends StatelessWidget {
     );
   }
 }
+
+/// Generic stat badge used for the secondary-sort value in the
+/// bottom-left corner. When [label] is provided it shows as a small
+/// leading 3-letter prefix (e.g. "DMG 7"); when omitted the badge is
+/// just the value (e.g. "Long" for the range attribute).
+class _StatBadge extends StatelessWidget {
+  final String? label;
+  final String value;
+  const _StatBadge({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: RichText(
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        text: TextSpan(
+          children: [
+            if (label != null)
+              TextSpan(
+                text: '$label ',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            TextSpan(
+              text: value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String? _displayValue(Weapon w, WeaponSortAttr attr) => switch (attr) {
+      WeaponSortAttr.rarity => w.rarity,
+      WeaponSortAttr.price => w.price,
+      WeaponSortAttr.range => w.range,
+      WeaponSortAttr.encumbrance => w.encumbrance,
+      WeaponSortAttr.damage => w.damage,
+      WeaponSortAttr.critical => w.critical,
+      WeaponSortAttr.hardpoints => w.hardpoints,
+    };
 
 /// Extract a numeric rarity from strings like `"6"`, `"(R) 6"`, `"6 (R)"`,
 /// or `"7+"`. Returns `null` when nothing parseable is present.

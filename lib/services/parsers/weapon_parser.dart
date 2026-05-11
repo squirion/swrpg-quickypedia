@@ -19,7 +19,10 @@ Weapon? parseWeaponPage(Document doc, String sourceUrl) {
   final name = _extractTitle(doc);
   if (name == null || name.isEmpty) return null;
 
-  final altStats = _findStatAltText(doc);
+  final statImg = _findStatImage(doc);
+  if (statImg == null) return null;
+
+  final altStats = statImg.attributes['alt'];
   if (altStats == null) return null;
 
   final fields = _parseAltStats(altStats);
@@ -38,6 +41,7 @@ Weapon? parseWeaponPage(Document doc, String sourceUrl) {
     specialQualities: _splitSpecial(fields['special']),
     description: _extractLeadParagraph(doc),
     sourceUrl: sourceUrl,
+    imageUrl: _cleanImageUrl(statImg.attributes['src']),
   );
 }
 
@@ -49,18 +53,32 @@ String? _extractTitle(Document doc) {
   return cleaned.isEmpty ? null : cleaned;
 }
 
-/// Walk every <img alt="..."> on the page and return the first alt value
-/// that looks like a weapon stat block (must contain at least Skill and
-/// Damage so we don't false-positive on icons / decorations).
-String? _findStatAltText(Document doc) {
+/// Walk every <img> on the page and return the first one whose `alt`
+/// looks like a weapon stat block (must contain at least Skill and
+/// Damage so we don't false-positive on icons / decorations). The
+/// same element carries the stat alt text AND the image URL, so the
+/// caller can pull both off it.
+Element? _findStatImage(Document doc) {
   for (final img in doc.querySelectorAll('img')) {
     final alt = img.attributes['alt'];
     if (alt == null || alt.length < 20) continue;
     if (!alt.contains('Skill ')) continue;
     if (!alt.contains('Damage ')) continue;
-    return alt;
+    return img;
   }
   return null;
+}
+
+/// Trim the Fandom cache-buster query off image URLs so the same image
+/// across revisions has a stable cache key. Returns `null` for empty
+/// or lazy-load placeholders (Fandom sometimes serves `data:image/gif…`
+/// inline placeholders and the real URL only in `data-src`).
+String? _cleanImageUrl(String? raw) {
+  if (raw == null) return null;
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return null;
+  if (trimmed.startsWith('data:')) return null;
+  return trimmed;
 }
 
 /// "Skill Ranged (Light) Range Medium Encumbrance 2 …" →

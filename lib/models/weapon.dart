@@ -16,6 +16,7 @@ class Weapon {
   final List<String> specialQualities;
   final String? description;
   final String? sourceUrl;
+  final String? imageUrl;
 
   const Weapon({
     required this.name,
@@ -30,6 +31,7 @@ class Weapon {
     this.specialQualities = const [],
     this.description,
     this.sourceUrl,
+    this.imageUrl,
   });
 
   factory Weapon.fromJson(Map<String, dynamic> json) {
@@ -50,6 +52,7 @@ class Weapon {
       specialQualities: specials,
       description: json['description'] as String?,
       sourceUrl: json['sourceUrl'] as String?,
+      imageUrl: json['imageUrl'] as String?,
     );
   }
 
@@ -66,5 +69,6 @@ class Weapon {
         if (specialQualities.isNotEmpty) 'specialQualities': specialQualities,
         if (description != null) 'description': description,
         if (sourceUrl != null) 'sourceUrl': sourceUrl,
+        if (imageUrl != null) 'imageUrl': imageUrl,
       };
 }

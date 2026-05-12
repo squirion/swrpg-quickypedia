@@ -12,6 +12,7 @@ import 'package:swrpg_quickypedia/services/github_data_repo.dart';
 import 'package:swrpg_quickypedia/services/parsers/item_qualities_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/weapon_parser.dart';
 import 'package:swrpg_quickypedia/services/system_data_store.dart';
+import 'package:swrpg_quickypedia/services/weapon_image_upload.dart';
 import 'package:swrpg_quickypedia/services/weapon_sort.dart';
 import 'package:swrpg_quickypedia/services/wiki_scraper.dart';
 
@@ -125,6 +126,22 @@ final githubDataRepoProvider = Provider<GithubDataRepo>((ref) {
   ref.onDispose(repo.close);
   return repo;
 });
+
+/// Uploads a weapon image to the data repo and patches the cached
+/// `weapons.json` with the new URL.
+final weaponImageUploaderProvider = Provider<WeaponImageUploader>((ref) {
+  final uploader = WeaponImageUploader(ref.watch(githubDataRepoProvider));
+  ref.onDispose(uploader.close);
+  return uploader;
+});
+
+/// HTTP headers to attach when fetching an image from the private data
+/// repo. Returns null for non-github-raw URLs so we don't leak the PAT
+/// to arbitrary origins.
+Map<String, String>? githubAuthHeadersFor(String url, WidgetRef ref) {
+  if (!url.startsWith('https://raw.githubusercontent.com/')) return null;
+  return ref.read(githubDataRepoProvider).rawAuthHeaders;
+}
 
 /// Where each on-device JSON cache lives in the shared GitHub repo.
 /// Keep this list in sync with the [SystemDataStore] keys used for

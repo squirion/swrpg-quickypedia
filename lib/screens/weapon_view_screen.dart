@@ -1,9 +1,12 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/models/item_quality.dart';
 import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
+import 'package:swrpg_quickypedia/services/weapon_image_upload.dart';
 import 'package:swrpg_quickypedia/theme.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_placeholder.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -21,38 +24,49 @@ class WeaponViewScreen extends ConsumerWidget {
     final qualitiesAsync = ref.watch(itemQualitiesProvider);
     final qualities = qualitiesAsync.asData?.value ?? const {};
 
+    // After an image upload, weaponsProvider gets invalidated and the
+    // fresh weapon (now with imageUrl) lands in the list. Look it up
+    // by name so this screen re-renders with the new pointer without
+    // needing the caller to push a new route.
+    final allWeapons =
+        ref.watch(weaponsProvider).asData?.value ?? const <Weapon>[];
+    final live = allWeapons.firstWhere(
+      (w) => w.name == weapon.name,
+      orElse: () => weapon,
+    );
+
     final hasMechanics =
-        weapon.mechanics != null && weapon.mechanics!.isNotEmpty;
-    final hasSpecial = weapon.specialQualities.isNotEmpty;
+        live.mechanics != null && live.mechanics!.isNotEmpty;
+    final hasSpecial = live.specialQualities.isNotEmpty;
     final showMechanicsSection = hasMechanics || hasSpecial;
 
     return Scaffold(
-      appBar: AppBar(title: Text(weapon.name)),
+      appBar: AppBar(title: Text(live.name)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 48),
         children: [
-          _Crumbs(name: weapon.name),
+          _Crumbs(name: live.name),
           const SizedBox(height: 16),
-          _Hero(weapon: weapon),
+          _Hero(weapon: live),
           const SizedBox(height: 20),
           const _SectionHeading(number: '01', title: 'Specifications'),
           const SizedBox(height: 14),
-          _StatBlock(weapon: weapon),
+          _StatBlock(weapon: live),
           if (showMechanicsSection) ...[
             const SizedBox(height: 28),
             const _SectionHeading(number: '02', title: 'Game Mechanics'),
             const SizedBox(height: 14),
             _MechanicsSection(
-              specialQualities: weapon.specialQualities,
-              prose: weapon.mechanics,
+              specialQualities: live.specialQualities,
+              prose: live.mechanics,
               qualities: qualities,
             ),
           ],
-          if (weapon.sourceUrl != null) ...[
+          if (live.sourceUrl != null) ...[
             const SizedBox(height: 28),
             const _SectionHeading(number: '03', title: 'Reference'),
             const SizedBox(height: 14),
-            _SourceLink(url: weapon.sourceUrl!),
+            _SourceLink(url: live.sourceUrl!),
           ],
         ],
       ),
@@ -241,12 +255,16 @@ class _Crumbs extends StatelessWidget {
 /// bottom third, where the skill eyebrow, name, and lede description are
 /// overlaid. Falls back to a stylized rifle silhouette + hatch pattern
 /// when no image URL is available.
-class _Hero extends StatelessWidget {
+class _Hero extends ConsumerWidget {
   final Weapon weapon;
   const _Hero({required this.weapon});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authHeaders = weapon.imageUrl == null
+        ? null
+        : githubAuthHeadersFor(weapon.imageUrl!, ref);
+
     return AspectRatio(
       aspectRatio: 4 / 5,
       child: Container(
@@ -272,6 +290,7 @@ class _Hero extends StatelessWidget {
               else
                 CachedNetworkImage(
                   imageUrl: weapon.imageUrl!,
+                  httpHeaders: authHeaders,
                   fit: BoxFit.cover,
                   placeholder: (_, _) => const ColoredBox(color: AppColors.bg2),
                   errorWidget: (_, _, _) => const WeaponPlaceholder(),
@@ -296,8 +315,12 @@ class _Hero extends StatelessWidget {
                 bottom: 18,
                 child: _HeroOverlay(weapon: weapon),
               ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: _EditImageButton(weapon: weapon),
+              ),
               const _CornerBracket(alignment: Alignment.topLeft),
-              const _CornerBracket(alignment: Alignment.topRight),
               const _CornerBracket(alignment: Alignment.bottomLeft),
               const _CornerBracket(alignment: Alignment.bottomRight),
             ],
@@ -305,6 +328,158 @@ class _Hero extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _EditImageButton extends ConsumerWidget {
+  final Weapon weapon;
+  const _EditImageButton({required this.weapon});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.55),
+      shape: const CircleBorder(
+        side: BorderSide(color: AppColors.accent, width: 1),
+      ),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () => _openSheet(context, ref),
+        child: const Padding(
+          padding: EdgeInsets.all(6),
+          child: Icon(Icons.edit, size: 16, color: AppColors.accent),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSheet(BuildContext context, WidgetRef ref) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.panel,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text(
+                'Add image',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.ink,
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Pick from device'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _uploadFromFile(context, ref);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('From URL'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _uploadFromUrl(context, ref);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _uploadFromFile(BuildContext context, WidgetRef ref) async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (picked == null || picked.files.isEmpty) return;
+    final bytes = picked.files.single.bytes;
+    if (bytes == null) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not read the selected file.')),
+      );
+      return;
+    }
+    if (!context.mounted) return;
+    await _runUpload(context, ref, (uploader) async {
+      return uploader.upload(weapon: weapon, bytes: bytes);
+    });
+  }
+
+  Future<void> _uploadFromUrl(BuildContext context, WidgetRef ref) async {
+    final controller = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Image URL'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'https://…',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final clip = await Clipboard.getData('text/plain');
+              if (clip?.text != null) controller.text = clip!.text!;
+            },
+            child: const Text('Paste'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Fetch'),
+          ),
+        ],
+      ),
+    );
+    if (url == null || url.isEmpty) return;
+    if (!context.mounted) return;
+    await _runUpload(context, ref, (uploader) async {
+      return uploader.uploadFromUrl(weapon: weapon, url: url);
+    });
+  }
+
+  Future<void> _runUpload(
+    BuildContext context,
+    WidgetRef ref,
+    Future<String> Function(WeaponImageUploader uploader) action,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Uploading image…')),
+    );
+    try {
+      final uploader = ref.read(weaponImageUploaderProvider);
+      await action(uploader);
+      ref.invalidate(weaponsProvider);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Image uploaded.')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload failed: $e')),
+      );
+    }
   }
 }
 

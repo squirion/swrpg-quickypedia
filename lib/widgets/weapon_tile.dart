@@ -35,6 +35,10 @@ class WeaponTile extends ConsumerWidget {
         ? null
         : _displayValue(weapon, secondaryAttr);
 
+    final authHeaders = weapon.imageUrl == null
+        ? null
+        : githubAuthHeadersFor(weapon.imageUrl!, ref);
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -52,7 +56,10 @@ class WeaponTile extends ConsumerWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                _Background(imageUrl: weapon.imageUrl),
+                _Background(
+                  imageUrl: weapon.imageUrl,
+                  authHeaders: authHeaders,
+                ),
                 const _TopShade(),
                 const _BottomShade(),
                 Positioned(
@@ -103,7 +110,8 @@ class WeaponTile extends ConsumerWidget {
 
 class _Background extends StatelessWidget {
   final String? imageUrl;
-  const _Background({this.imageUrl});
+  final Map<String, String>? authHeaders;
+  const _Background({this.imageUrl, this.authHeaders});
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +125,7 @@ class _Background extends StatelessWidget {
     if (url == null || url.isEmpty) return fallback;
     return CachedNetworkImage(
       imageUrl: url,
+      httpHeaders: authHeaders,
       fit: BoxFit.cover,
       placeholder: (_, _) => Container(color: const Color(0xFF111827)),
       errorWidget: (_, _, _) => fallback,

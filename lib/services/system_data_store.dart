@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
 
@@ -55,6 +56,22 @@ class SystemDataStore {
       'items': items.map(toJson).toList(growable: false),
     };
     await f.writeAsString(jsonEncode(payload));
+  }
+
+  /// Raw bytes of the on-disk file, or `null` if it doesn't exist. Used
+  /// by the cloud-sync layer to push the local cache verbatim to the
+  /// shared GitHub repo without round-tripping through the model layer.
+  Future<Uint8List?> readBytes() async {
+    final f = await _file();
+    if (!await f.exists()) return null;
+    return f.readAsBytes();
+  }
+
+  /// Overwrites the file's bytes wholesale. Used by the cloud-sync
+  /// layer when pulling a cached database from the shared GitHub repo.
+  Future<void> writeBytes(Uint8List bytes) async {
+    final f = await _file();
+    await f.writeAsBytes(bytes);
   }
 
   /// Returns the timestamp of the last successful write, or null if none.

@@ -126,6 +126,153 @@ final githubDataRepoProvider = Provider<GithubDataRepo>((ref) {
   return repo;
 });
 
+/// Where each on-device JSON cache lives in the shared GitHub repo.
+/// Keep this list in sync with the [SystemDataStore] keys used for
+/// scraped data — anything added here is pulled/pushed by the cloud-
+/// sync flow.
+const Map<String, String> _kCloudDatabases = {
+  'weapons': 'databases/weapons.json',
+  'item_qualities': 'databases/item_qualities.json',
+};
+
+/// Lifecycle state for a cloud-sync action. `direction` is `'pull'`
+/// or `'push'` while running; null when idle/error/done.
+sealed class CloudSyncState {
+  const CloudSyncState();
+}
+
+class CloudSyncIdle extends CloudSyncState {
+  const CloudSyncIdle();
+}
+
+class CloudSyncRunning extends CloudSyncState {
+  final String direction;
+  const CloudSyncRunning(this.direction);
+}
+
+class CloudSyncError extends CloudSyncState {
+  final String direction;
+  final String message;
+  const CloudSyncError(this.direction, this.message);
+}
+
+class CloudSyncResult {
+  final String direction;
+  final int succeeded;
+  final int skipped;
+  final List<String> errors;
+  const CloudSyncResult({
+    required this.direction,
+    required this.succeeded,
+    required this.skipped,
+    required this.errors,
+  });
+}
+
+final cloudSyncProvider =
+    NotifierProvider<CloudSyncNotifier, CloudSyncState>(CloudSyncNotifier.new);
+
+class CloudSyncNotifier extends Notifier<CloudSyncState> {
+  @override
+  CloudSyncState build() => const CloudSyncIdle();
+
+  /// Pull each cached database from the GitHub data repo and overwrite
+  /// the local copy. Missing files in the cloud are silently skipped
+  /// (counted in [CloudSyncResult.skipped]).
+  Future<CloudSyncResult> pullDatabases() async {
+    return _run('pull', (gh) async {
+      final errors = <String>[];
+      var succeeded = 0;
+      var skipped = 0;
+      for (final entry in _kCloudDatabases.entries) {
+        try {
+          final bytes = await gh.readRaw(entry.value);
+          if (bytes == null) {
+            skipped++;
+            continue;
+          }
+          await SystemDataStore(entry.key).writeBytes(bytes);
+          succeeded++;
+        } catch (e) {
+          errors.add('${entry.key}: $e');
+        }
+      }
+      ref.invalidate(weaponsProvider);
+      ref.invalidate(itemQualitiesProvider);
+      return CloudSyncResult(
+        direction: 'pull',
+        succeeded: succeeded,
+        skipped: skipped,
+        errors: errors,
+      );
+    });
+  }
+
+  /// Push each on-device cached database to the GitHub data repo.
+  /// Locally-missing files are skipped (nothing to push). On a SHA
+  /// conflict the underlying client refetches and retries once.
+  Future<CloudSyncResult> pushDatabases() async {
+    return _run('push', (gh) async {
+      final errors = <String>[];
+      var succeeded = 0;
+      var skipped = 0;
+      for (final entry in _kCloudDatabases.entries) {
+        try {
+          final bytes = await SystemDataStore(entry.key).readBytes();
+          if (bytes == null) {
+            skipped++;
+            continue;
+          }
+          final current = await gh.getContents(entry.value);
+          await gh.putFile(
+            path: entry.value,
+            bytes: bytes,
+            commitMessage: 'Update ${entry.key} database',
+            expectedSha: current?.sha,
+          );
+          succeeded++;
+        } catch (e) {
+          errors.add('${entry.key}: $e');
+        }
+      }
+      return CloudSyncResult(
+        direction: 'push',
+        succeeded: succeeded,
+        skipped: skipped,
+        errors: errors,
+      );
+    });
+  }
+
+  Future<CloudSyncResult> _run(
+    String direction,
+    Future<CloudSyncResult> Function(GithubDataRepo) body,
+  ) async {
+    if (state is CloudSyncRunning) {
+      return CloudSyncResult(
+        direction: direction,
+        succeeded: 0,
+        skipped: 0,
+        errors: const ['already running'],
+      );
+    }
+    state = CloudSyncRunning(direction);
+    try {
+      final result = await body(ref.read(githubDataRepoProvider));
+      state = const CloudSyncIdle();
+      return result;
+    } catch (e) {
+      state = CloudSyncError(direction, e.toString());
+      return CloudSyncResult(
+        direction: direction,
+        succeeded: 0,
+        skipped: 0,
+        errors: [e.toString()],
+      );
+    }
+  }
+}
+
 // --- Campaign ---
 
 final campaignIdProvider = NotifierProvider<CampaignIdNotifier, String?>(() {

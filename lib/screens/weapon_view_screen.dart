@@ -8,6 +8,7 @@ import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/services/weapon_image_upload.dart';
 import 'package:swrpg_quickypedia/theme.dart';
+import 'package:swrpg_quickypedia/widgets/fullscreen_image_viewer.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_placeholder.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -261,11 +262,12 @@ class _Hero extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authHeaders = weapon.imageUrl == null
-        ? null
-        : githubAuthHeadersFor(weapon.imageUrl!, ref);
+    final hasImage =
+        weapon.imageUrl != null && weapon.imageUrl!.isNotEmpty;
+    final authHeaders =
+        hasImage ? githubAuthHeadersFor(weapon.imageUrl!, ref) : null;
 
-    return AspectRatio(
+    final panel = AspectRatio(
       aspectRatio: 4 / 5,
       child: Container(
         decoration: BoxDecoration(
@@ -285,15 +287,21 @@ class _Hero extends ConsumerWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (weapon.imageUrl == null || weapon.imageUrl!.isEmpty)
+              if (!hasImage)
                 const WeaponPlaceholder()
               else
-                CachedNetworkImage(
-                  imageUrl: weapon.imageUrl!,
-                  httpHeaders: authHeaders,
-                  fit: BoxFit.cover,
-                  placeholder: (_, _) => const ColoredBox(color: AppColors.bg2),
-                  errorWidget: (_, _, _) => const WeaponPlaceholder(),
+                Hero(
+                  tag: weapon.imageUrl!,
+                  child: CachedNetworkImage(
+                    imageUrl: weapon.imageUrl!,
+                    httpHeaders: authHeaders,
+                    // Preserve aspect ratio (was BoxFit.cover) so the
+                    // full image is visible at a glance; tap to zoom.
+                    fit: BoxFit.contain,
+                    placeholder: (_, _) =>
+                        const ColoredBox(color: AppColors.bg2),
+                    errorWidget: (_, _, _) => const WeaponPlaceholder(),
+                  ),
                 ),
               const DecoratedBox(
                 decoration: BoxDecoration(
@@ -327,6 +335,22 @@ class _Hero extends ConsumerWidget {
           ),
         ),
       ),
+    );
+
+    // Wrap the whole hero in a single GestureDetector OUTSIDE the
+    // Stack. Anything inside (the edit pencil InkWell) absorbs its
+    // own taps; everything else flows up to this outer tap → opens
+    // the fullscreen viewer.
+    if (!hasImage) return panel;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => FullscreenImageViewer.open(
+        context,
+        imageUrl: weapon.imageUrl!,
+        httpHeaders: authHeaders,
+        heroTag: weapon.imageUrl!,
+      ),
+      child: panel,
     );
   }
 }

@@ -47,6 +47,7 @@ class Character {
   final String name;
   final String? characterUrl;
   final String? avatarUrl;
+  final String? content;
   final CampaignMini? campaign;
   final String visibility;
   final UserMini? author;
@@ -62,6 +63,7 @@ class Character {
     required this.name,
     this.characterUrl,
     this.avatarUrl,
+    this.content,
     this.campaign,
     required this.visibility,
     this.author,
@@ -79,6 +81,9 @@ class Character {
       name: json['name'] as String,
       characterUrl: json['character_url'] as String?,
       avatarUrl: json['avatar_url'] as String?,
+      content: json['content'] as String? ??
+          json['description'] as String? ??
+          json['bio'] as String?,
       campaign: json['campaign'] != null
           ? CampaignMini.fromJson(json['campaign'] as Map<String, dynamic>)
           : null,

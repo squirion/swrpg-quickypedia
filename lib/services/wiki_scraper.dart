@@ -79,6 +79,12 @@ class WikiScraper {
     return urls;
   }
 
+  /// Fetch and parse a single page. Public so caller-side scrapers
+  /// (e.g. the armor scraper, which extracts its index from a hand-
+  /// written wiki page rather than the auto-generated category) can
+  /// reuse the same UA-spoofed client.
+  Future<Document> fetchDocument(String url) => _fetchDocument(url);
+
   Future<Document> _fetchDocument(String url) async {
     final resp = await _client.get(
       Uri.parse(url),

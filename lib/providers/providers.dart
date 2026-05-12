@@ -620,23 +620,25 @@ const List<String> kArmorCategoryOrder = [
   kArmorCategoryOther,
 ];
 
-/// Fandom subcategory URLs for the 6 canonical armor buckets. The slugs
-/// match the wiki's existing pages: `_` for spaces, `%26` for `&`, and
-/// the `(light)` / `(heavy)` parens are lowercase. If Fandom renames
-/// one of these the bucket simply ends up empty — patch the URL here.
-const Map<String, String> _kArmorSubcategoryUrls = {
-  'Attire & Other Clothes':
-      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Attire_%26_other_clothes',
-  'Worn Equipment':
-      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Worn_equipment',
-  'Armor (Light)':
-      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Armor_(light)',
-  'Armor (Heavy)':
-      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Armor_(heavy)',
-  'Beast Armor & Equipment':
-      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Beast_armor_%26_equipment',
-  'Legendary':
-      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Legendary',
+/// Single index page for the armor catalogue. The wiki's
+/// `Category:Armor` page contains a hand-written body where armors are
+/// listed under H2/H3 section headers (`ATTIRE_&_OTHER_CLOTHES`,
+/// `WORN_EQUIPMENT`, `LIGHT`, `HEAVY`, `BEAST_ARMOR_&_EQUIPMENT`,
+/// `LEGENDARY`). The scraper walks that body to discover both the
+/// armor URLs AND their bucket — no separate subcategory pages exist.
+const String _kArmorIndexUrl =
+    'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Armor';
+
+/// Maps the section IDs found in the wiki article body to the canonical
+/// bucket labels used by the rest of the app. The `.26` is Fandom's
+/// URL-encoded `&` (`%26` → `.26` in MediaWiki anchor IDs).
+const Map<String, String> _kArmorSectionToCategory = {
+  'ATTIRE_.26_OTHER_CLOTHES': 'Attire & Other Clothes',
+  'WORN_EQUIPMENT': 'Worn Equipment',
+  'LIGHT': 'Armor (Light)',
+  'HEAVY': 'Armor (Heavy)',
+  'BEAST_ARMOR_.26_EQUIPMENT': 'Beast Armor & Equipment',
+  'LEGENDARY': 'Legendary',
 };
 
 final armorsScrapeProvider =
@@ -665,11 +667,12 @@ class ArmorsScrapeNotifier extends Notifier<ScrapeState> {
   @override
   ScrapeState build() => const ScrapeIdle();
 
-  /// Scrapes all 6 armor subcategories in [kArmorCategoryOrder] and
-  /// tags each parsed armor with the first bucket it was found in.
-  /// The item-qualities refresh runs afterward; failures there are
-  /// surfaced via [ArmorsScrapeResult.qualitiesError] but don't flip
-  /// the armors scrape itself into an error state.
+  /// Discover armors from the hand-written `Category:Armor` index, then
+  /// fetch + parse each one. Bucketing comes from the H2/H3 section
+  /// header the link appears under in the article body, mapped through
+  /// [_kArmorSectionToCategory]. The item-qualities refresh runs
+  /// afterward; failures there are surfaced via
+  /// [ArmorsScrapeResult.qualitiesError] without failing the scrape.
   Future<ArmorsScrapeResult> refresh() async {
     if (state is ScrapeRunning) {
       return const ArmorsScrapeResult(armors: -1, qualities: -1);
@@ -679,47 +682,32 @@ class ArmorsScrapeNotifier extends Notifier<ScrapeState> {
     int armorsCount = -1;
     String? armorsError;
     try {
-      final perBucket = <_BucketScrape>[];
-      var doneSoFar = 0;
-      // Iterate in canonical order so first-match-wins below produces
-      // the priority the user asked for.
-      for (final label in kArmorCategoryOrder) {
-        if (label == kArmorCategoryOther) continue;
-        final url = _kArmorSubcategoryUrls[label];
-        if (url == null) continue;
-        try {
-          final list = await scraper.scrapeCategory<Armor>(
-            categoryUrl: url,
-            parser: parseArmorPage,
-            onProgress: (done, total) {
-              final running = state;
-              final knownTotal = running is ScrapeRunning
-                  ? (running.total < doneSoFar + total
-                      ? doneSoFar + total
-                      : running.total)
-                  : doneSoFar + total;
-              state = ScrapeRunning(doneSoFar + done, knownTotal);
-            },
-          );
-          perBucket.add(_BucketScrape(label, list));
-          doneSoFar += list.length;
-        } catch (e) {
-          // One bucket failing shouldn't abort the rest.
-          perBucket.add(_BucketScrape(label, const <Armor>[],
-              error: e.toString()));
-        }
+      // Step 1: build the URL → bucket index from the wiki article.
+      final index = await _discoverArmorIndex(scraper);
+      if (index.isEmpty) {
+        throw StateError(
+            'No armor links found under any of the 6 section headers '
+            'on Category:Armor. Has the wiki been restructured?');
       }
+      final urls = index.keys.toList(growable: false);
+      state = ScrapeRunning(0, urls.length);
 
-      // First-match-wins dedup: iterate buckets in priority order and
-      // accept each armor the first time we see its name.
-      final seen = <String>{};
+      // Step 2: fetch + parse each unique armor page.
       final all = <Armor>[];
-      for (final bucket in perBucket) {
-        for (final a in bucket.items) {
-          if (a.name.isEmpty) continue;
-          if (!seen.add(a.name)) continue;
-          all.add(_withCategory(a, bucket.label));
+      for (var i = 0; i < urls.length; i++) {
+        final url = urls[i];
+        final bucket = index[url]!;
+        try {
+          final doc = await scraper.fetchDocument(url);
+          final parsed = parseArmorPage(doc, url);
+          if (parsed != null) {
+            all.add(_withCategory(parsed, bucket));
+          }
+        } catch (_) {
+          // Skip pages that fail to fetch/parse — same convention as
+          // the weapons scraper.
         }
+        state = ScrapeRunning(i + 1, urls.length);
       }
 
       await ref.read(armorsStoreProvider).write<Armor>(
@@ -728,18 +716,6 @@ class ArmorsScrapeNotifier extends Notifier<ScrapeState> {
           );
       ref.invalidate(armorsProvider);
       armorsCount = all.length;
-
-      // Only treat the whole scrape as failed when EVERY bucket errored
-      // (e.g. Fandom is unreachable). Otherwise we keep the partial
-      // result; the snackbar can still tell the user which buckets fell
-      // through.
-      if (perBucket.isNotEmpty &&
-          perBucket.every((b) => b.error != null)) {
-        armorsError = perBucket
-            .map((b) => '${b.label}: ${b.error}')
-            .join('\n');
-        state = ScrapeError(armorsError);
-      }
     } catch (e) {
       armorsError = e.toString();
       state = ScrapeError(armorsError);
@@ -773,11 +749,50 @@ class ArmorsScrapeNotifier extends Notifier<ScrapeState> {
   }
 }
 
-class _BucketScrape {
-  final String label;
-  final List<Armor> items;
-  final String? error;
-  _BucketScrape(this.label, this.items, {this.error});
+/// Walk the `Category:Armor` article body and build a map of
+/// `armor_page_url → bucket_label`. The wiki groups armors under H2/H3
+/// headers with anchor IDs from [_kArmorSectionToCategory]; everything
+/// outside those sections is ignored. Duplicate links (a few sections
+/// repeat the same armor) keep the FIRST bucket they appear in.
+Future<Map<String, String>> _discoverArmorIndex(WikiScraper scraper) async {
+  final doc = await scraper.fetchDocument(_kArmorIndexUrl);
+  final article = doc.querySelector('.mw-parser-output');
+  if (article == null) return const {};
+
+  final out = <String, String>{};
+  String? currentBucket;
+  final origin = Uri.parse(_kArmorIndexUrl).origin;
+
+  void visit(dynamic node) {
+    final tag = node.localName as String?;
+    if (tag == 'h1' || tag == 'h2' || tag == 'h3' || tag == 'h4') {
+      // Anchor ID lives on the heading itself or on its `.mw-headline`
+      // child (MediaWiki convention varies by theme).
+      final id = (node.attributes['id'] as String?) ??
+          node.querySelector('[id]')?.attributes['id'];
+      currentBucket = id == null ? null : _kArmorSectionToCategory[id];
+      return;
+    }
+    if (tag == 'a') {
+      final href = node.attributes['href'] as String?;
+      if (href != null &&
+          href.startsWith('/wiki/') &&
+          !href.contains(':') &&
+          currentBucket != null) {
+        final url = '$origin$href';
+        out.putIfAbsent(url, () => currentBucket!);
+      }
+      return;
+    }
+    for (final c in node.children) {
+      visit(c);
+    }
+  }
+
+  for (final c in article.children) {
+    visit(c);
+  }
+  return out;
 }
 
 /// Build a copy of [a] with [category] replaced. Armor is immutable and

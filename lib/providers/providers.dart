@@ -1,14 +1,19 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:swrpg_quickypedia/models/armor.dart';
+import 'package:swrpg_quickypedia/models/armor_sort.dart';
 import 'package:swrpg_quickypedia/models/campaign.dart';
 import 'package:swrpg_quickypedia/models/character.dart';
 import 'package:swrpg_quickypedia/models/item_quality.dart';
 import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/models/weapon_sort.dart';
+import 'package:swrpg_quickypedia/services/armor_image_upload.dart';
+import 'package:swrpg_quickypedia/services/armor_sort.dart';
 import 'package:swrpg_quickypedia/services/auth_service.dart';
 import 'package:swrpg_quickypedia/services/api_client.dart';
 import 'package:swrpg_quickypedia/services/github_data_repo.dart';
+import 'package:swrpg_quickypedia/services/parsers/armor_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/item_qualities_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/weapon_parser.dart';
 import 'package:swrpg_quickypedia/services/system_data_store.dart';
@@ -135,6 +140,14 @@ final weaponImageUploaderProvider = Provider<WeaponImageUploader>((ref) {
   return uploader;
 });
 
+/// Uploads an armor image to the data repo and patches the cached
+/// `armors.json` with the new URL.
+final armorImageUploaderProvider = Provider<ArmorImageUploader>((ref) {
+  final uploader = ArmorImageUploader(ref.watch(githubDataRepoProvider));
+  ref.onDispose(uploader.close);
+  return uploader;
+});
+
 /// HTTP headers to attach when fetching an image from the private data
 /// repo. Returns null for non-github-raw URLs so we don't leak the PAT
 /// to arbitrary origins.
@@ -149,6 +162,7 @@ Map<String, String>? githubAuthHeadersFor(String url, WidgetRef ref) {
 /// sync flow.
 const Map<String, String> _kCloudDatabases = {
   'weapons': 'databases/weapons.json',
+  'armors': 'databases/armors.json',
   'item_qualities': 'databases/item_qualities.json',
 };
 
@@ -215,6 +229,7 @@ class CloudSyncNotifier extends Notifier<CloudSyncState> {
         }
       }
       ref.invalidate(weaponsProvider);
+      ref.invalidate(armorsProvider);
       ref.invalidate(itemQualitiesProvider);
       return CloudSyncResult(
         direction: 'pull',
@@ -548,4 +563,227 @@ class ItemQualitiesScrapeNotifier extends Notifier<ScrapeState> {
       return -1;
     }
   }
+}
+
+// --- System data: armors ---
+//
+// Mirrors the weapons block above. The 3-tier rows on the type screen
+// come from the `category` field on each armor (one of the canonical
+// Fandom subcategory labels: "Attire & Other Clothes", "Worn Equipment",
+// "Armor (Light)", "Armor (Heavy)", "Beast Armor & Equipment",
+// "Legendary"). The scrape notifier itself lands with commit 2.
+
+final armorsStoreProvider = Provider<SystemDataStore>((_) {
+  return const SystemDataStore('armors');
+});
+
+/// Current sort preference, applied to every armor list in the app.
+/// Defaults to rarity ascending (most common first), with name as the
+/// implicit secondary sort handled by [compareArmors].
+final armorSortProvider =
+    NotifierProvider<ArmorSortNotifier, ArmorSort>(ArmorSortNotifier.new);
+
+class ArmorSortNotifier extends Notifier<ArmorSort> {
+  @override
+  ArmorSort build() => ArmorSort.defaultSort;
+
+  /// Selecting the currently-active attribute toggles direction;
+  /// selecting a different attribute keeps the current direction so
+  /// the user doesn't have to re-flip every time they change axis.
+  void select(ArmorSortAttr attr) {
+    state = state.attr == attr
+        ? state.copyWith(ascending: !state.ascending)
+        : state.copyWith(attr: attr);
+  }
+}
+
+final armorsProvider = FutureProvider<List<Armor>>((ref) async {
+  final store = ref.watch(armorsStoreProvider);
+  final sort = ref.watch(armorSortProvider);
+  final list = await store.read<Armor>(Armor.fromJson);
+  list.sort((a, b) => compareArmors(a, b, sort));
+  return list;
+});
+
+/// Canonical 3-tier groupings for armor. Iteration order doubles as the
+/// row order on the type screen AND the first-match-wins priority when
+/// the same armor is listed under multiple Fandom subcategories. Tweak
+/// here if you want a specific bucket (e.g. Legendary) to win.
+const String kArmorCategoryOther = 'Other';
+const List<String> kArmorCategoryOrder = [
+  'Attire & Other Clothes',
+  'Worn Equipment',
+  'Armor (Light)',
+  'Armor (Heavy)',
+  'Beast Armor & Equipment',
+  'Legendary',
+  kArmorCategoryOther,
+];
+
+/// Fandom subcategory URLs for the 6 canonical armor buckets. The slugs
+/// match the wiki's existing pages: `_` for spaces, `%26` for `&`, and
+/// the `(light)` / `(heavy)` parens are lowercase. If Fandom renames
+/// one of these the bucket simply ends up empty — patch the URL here.
+const Map<String, String> _kArmorSubcategoryUrls = {
+  'Attire & Other Clothes':
+      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Attire_%26_other_clothes',
+  'Worn Equipment':
+      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Worn_equipment',
+  'Armor (Light)':
+      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Armor_(light)',
+  'Armor (Heavy)':
+      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Armor_(heavy)',
+  'Beast Armor & Equipment':
+      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Beast_armor_%26_equipment',
+  'Legendary':
+      'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Legendary',
+};
+
+final armorsScrapeProvider =
+    NotifierProvider<ArmorsScrapeNotifier, ScrapeState>(
+  ArmorsScrapeNotifier.new,
+);
+
+/// Outcome of an armors scrape — includes the chained item-qualities
+/// refresh so the UI can report both counts (and any qualities error)
+/// in a single feedback message.
+class ArmorsScrapeResult {
+  final int armors;
+  final int qualities;
+  final String? armorsError;
+  final String? qualitiesError;
+
+  const ArmorsScrapeResult({
+    required this.armors,
+    required this.qualities,
+    this.armorsError,
+    this.qualitiesError,
+  });
+}
+
+class ArmorsScrapeNotifier extends Notifier<ScrapeState> {
+  @override
+  ScrapeState build() => const ScrapeIdle();
+
+  /// Scrapes all 6 armor subcategories in [kArmorCategoryOrder] and
+  /// tags each parsed armor with the first bucket it was found in.
+  /// The item-qualities refresh runs afterward; failures there are
+  /// surfaced via [ArmorsScrapeResult.qualitiesError] but don't flip
+  /// the armors scrape itself into an error state.
+  Future<ArmorsScrapeResult> refresh() async {
+    if (state is ScrapeRunning) {
+      return const ArmorsScrapeResult(armors: -1, qualities: -1);
+    }
+    state = const ScrapeRunning(0, 0);
+    final scraper = WikiScraper();
+    int armorsCount = -1;
+    String? armorsError;
+    try {
+      final perBucket = <_BucketScrape>[];
+      var doneSoFar = 0;
+      // Iterate in canonical order so first-match-wins below produces
+      // the priority the user asked for.
+      for (final label in kArmorCategoryOrder) {
+        if (label == kArmorCategoryOther) continue;
+        final url = _kArmorSubcategoryUrls[label];
+        if (url == null) continue;
+        try {
+          final list = await scraper.scrapeCategory<Armor>(
+            categoryUrl: url,
+            parser: parseArmorPage,
+            onProgress: (done, total) {
+              final running = state;
+              final knownTotal = running is ScrapeRunning
+                  ? (running.total < doneSoFar + total
+                      ? doneSoFar + total
+                      : running.total)
+                  : doneSoFar + total;
+              state = ScrapeRunning(doneSoFar + done, knownTotal);
+            },
+          );
+          perBucket.add(_BucketScrape(label, list));
+          doneSoFar += list.length;
+        } catch (e) {
+          // One bucket failing shouldn't abort the rest.
+          perBucket.add(_BucketScrape(label, const <Armor>[],
+              error: e.toString()));
+        }
+      }
+
+      // First-match-wins dedup: iterate buckets in priority order and
+      // accept each armor the first time we see its name.
+      final seen = <String>{};
+      final all = <Armor>[];
+      for (final bucket in perBucket) {
+        for (final a in bucket.items) {
+          if (a.name.isEmpty) continue;
+          if (!seen.add(a.name)) continue;
+          all.add(_withCategory(a, bucket.label));
+        }
+      }
+
+      await ref.read(armorsStoreProvider).write<Armor>(
+            all,
+            (a) => a.toJson(),
+          );
+      ref.invalidate(armorsProvider);
+      armorsCount = all.length;
+
+      // Only treat the whole scrape as failed when EVERY bucket errored
+      // (e.g. Fandom is unreachable). Otherwise we keep the partial
+      // result; the snackbar can still tell the user which buckets fell
+      // through.
+      if (perBucket.isNotEmpty &&
+          perBucket.every((b) => b.error != null)) {
+        armorsError = perBucket
+            .map((b) => '${b.label}: ${b.error}')
+            .join('\n');
+        state = ScrapeError(armorsError);
+      }
+    } catch (e) {
+      armorsError = e.toString();
+      state = ScrapeError(armorsError);
+    } finally {
+      scraper.close();
+    }
+
+    int qualitiesCount = 0;
+    String? qualitiesError;
+    if (armorsError == null) {
+      try {
+        qualitiesCount = await ref
+            .read(itemQualitiesScrapeProvider.notifier)
+            .refresh();
+        if (qualitiesCount < 0) {
+          final s = ref.read(itemQualitiesScrapeProvider);
+          qualitiesError = s is ScrapeError ? s.message : 'unknown';
+        }
+      } catch (e) {
+        qualitiesError = e.toString();
+      }
+    }
+
+    if (armorsError == null) state = const ScrapeIdle();
+    return ArmorsScrapeResult(
+      armors: armorsCount,
+      qualities: qualitiesCount,
+      armorsError: armorsError,
+      qualitiesError: qualitiesError,
+    );
+  }
+}
+
+class _BucketScrape {
+  final String label;
+  final List<Armor> items;
+  final String? error;
+  _BucketScrape(this.label, this.items, {this.error});
+}
+
+/// Build a copy of [a] with [category] replaced. Armor is immutable and
+/// doesn't carry a copyWith, so rebuild via JSON.
+Armor _withCategory(Armor a, String category) {
+  final json = a.toJson();
+  json['category'] = category;
+  return Armor.fromJson(json);
 }

@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/models/character.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
+import 'package:swrpg_quickypedia/screens/armor_view_screen.dart';
+import 'package:swrpg_quickypedia/screens/armors_type_screen.dart';
 import 'package:swrpg_quickypedia/screens/campaign_input_screen.dart';
 import 'package:swrpg_quickypedia/screens/category_grid_screen.dart';
 import 'package:swrpg_quickypedia/screens/character_bio_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapon_view_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapons_type_screen.dart';
+import 'package:swrpg_quickypedia/widgets/armor_tile.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
 import 'package:swrpg_quickypedia/widgets/character_tile.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_tile.dart';
@@ -58,10 +61,17 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  void _openArmorsTypeScreen(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ArmorsTypeScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final characters = ref.watch(charactersProvider);
     final weapons = ref.watch(weaponsProvider);
+    final armors = ref.watch(armorsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -187,9 +197,40 @@ class HomeScreen extends ConsumerWidget {
             ),
             CategoryRow(
               title: 'Armor',
-              onTitleTap: () =>
-                  _openComingSoon(context, 'Armor', Icons.shield),
-              child: const ComingSoonTile(icon: Icons.shield),
+              onTitleTap: () => _openArmorsTypeScreen(context),
+              child: armors.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Center(child: Text('Failed: $error')),
+                ),
+                data: (list) {
+                  if (list.isEmpty) {
+                    return const ComingSoonTile(icon: Icons.shield);
+                  }
+                  return ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (_, i) {
+                      final a = list[i];
+                      return SizedBox(
+                        width: 120,
+                        child: ArmorTile(
+                          armor: a,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ArmorViewScreen(armor: a),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
             CategoryRow(
               title: 'Gear',

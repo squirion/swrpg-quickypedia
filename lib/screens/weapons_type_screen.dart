@@ -25,6 +25,11 @@ class WeaponsTypeScreen extends ConsumerWidget {
         title: const Text('Weapons'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.cloud_done_outlined),
+            tooltip: 'Test cloud connection',
+            onPressed: () => _testCloud(context, ref),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Fetch from wiki',
             onPressed: running ? null : () => _runScrape(context, ref),
@@ -147,6 +152,29 @@ class WeaponsTypeScreen extends ConsumerWidget {
           searchHint: 'Search $type',
           appBarActionsBuilder: (_, _) => const [WeaponSortMenu()],
         ),
+      ),
+    );
+  }
+
+  Future<void> _testCloud(BuildContext context, WidgetRef ref) async {
+    final repo = ref.read(githubDataRepoProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Checking cloud connection…')),
+    );
+    final result = await repo.healthCheck();
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(result.ok ? 'Cloud OK' : 'Cloud unreachable'),
+        content: SingleChildScrollView(child: Text(result.detail)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }

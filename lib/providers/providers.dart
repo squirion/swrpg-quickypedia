@@ -1,3 +1,4 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swrpg_quickypedia/models/campaign.dart';
@@ -7,6 +8,7 @@ import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/models/weapon_sort.dart';
 import 'package:swrpg_quickypedia/services/auth_service.dart';
 import 'package:swrpg_quickypedia/services/api_client.dart';
+import 'package:swrpg_quickypedia/services/github_data_repo.dart';
 import 'package:swrpg_quickypedia/services/parsers/item_qualities_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/weapon_parser.dart';
 import 'package:swrpg_quickypedia/services/system_data_store.dart';
@@ -107,6 +109,21 @@ class AuthNotifier extends Notifier<AuthState> {
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient(ref.watch(authServiceProvider));
+});
+
+// --- GitHub data repo (shared image + JSON storage) ---
+
+/// Configured from `.env`. The PAT is fine-grained and scoped to
+/// just the swrpg-quickypedia-data repo with Contents: Read and write.
+final githubDataRepoProvider = Provider<GithubDataRepo>((ref) {
+  final repo = GithubDataRepo(
+    owner: dotenv.env['GH_DATA_OWNER'] ?? '',
+    repo: dotenv.env['GH_DATA_REPO'] ?? '',
+    branch: dotenv.env['GH_DATA_BRANCH'] ?? 'main',
+    pat: dotenv.env['GH_DATA_PAT'] ?? '',
+  );
+  ref.onDispose(repo.close);
+  return repo;
 });
 
 // --- Campaign ---

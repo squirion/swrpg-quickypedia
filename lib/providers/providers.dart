@@ -8,6 +8,8 @@ import 'package:swrpg_quickypedia/models/character.dart';
 import 'package:swrpg_quickypedia/models/gear.dart';
 import 'package:swrpg_quickypedia/models/gear_sort.dart';
 import 'package:swrpg_quickypedia/models/item_quality.dart';
+import 'package:swrpg_quickypedia/models/starship.dart';
+import 'package:swrpg_quickypedia/models/starship_sort.dart';
 import 'package:swrpg_quickypedia/models/vehicle.dart';
 import 'package:swrpg_quickypedia/models/vehicle_sort.dart';
 import 'package:swrpg_quickypedia/models/weapon.dart';
@@ -22,8 +24,11 @@ import 'package:swrpg_quickypedia/services/github_data_repo.dart';
 import 'package:swrpg_quickypedia/services/parsers/armor_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/gear_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/item_qualities_parser.dart';
+import 'package:swrpg_quickypedia/services/parsers/starship_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/vehicle_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/weapon_parser.dart';
+import 'package:swrpg_quickypedia/services/starship_image_upload.dart';
+import 'package:swrpg_quickypedia/services/starship_sort.dart';
 import 'package:swrpg_quickypedia/services/vehicle_image_upload.dart';
 import 'package:swrpg_quickypedia/services/vehicle_sort.dart';
 import 'package:swrpg_quickypedia/services/system_data_store.dart';
@@ -175,6 +180,14 @@ final vehicleImageUploaderProvider = Provider<VehicleImageUploader>((ref) {
   return uploader;
 });
 
+/// Uploads a starship image to the data repo and patches the cached
+/// `starships.json` with the new URL.
+final starshipImageUploaderProvider = Provider<StarshipImageUploader>((ref) {
+  final uploader = StarshipImageUploader(ref.watch(githubDataRepoProvider));
+  ref.onDispose(uploader.close);
+  return uploader;
+});
+
 /// HTTP headers to attach when fetching an image from the private data
 /// repo. Returns null for non-github-raw URLs so we don't leak the PAT
 /// to arbitrary origins.
@@ -192,6 +205,7 @@ const Map<String, String> _kCloudDatabases = {
   'armors': 'databases/armors.json',
   'gear': 'databases/gear.json',
   'vehicles': 'databases/vehicles.json',
+  'starships': 'databases/starships.json',
   'item_qualities': 'databases/item_qualities.json',
 };
 
@@ -261,6 +275,7 @@ class CloudSyncNotifier extends Notifier<CloudSyncState> {
       ref.invalidate(armorsProvider);
       ref.invalidate(gearProvider);
       ref.invalidate(vehiclesProvider);
+      ref.invalidate(starshipsProvider);
       ref.invalidate(itemQualitiesProvider);
       return CloudSyncResult(
         direction: 'pull',
@@ -1210,4 +1225,199 @@ Vehicle _withVehicleCategory(Vehicle v, String category) {
   final json = v.toJson();
   json['category'] = category;
   return Vehicle.fromJson(json);
+}
+
+// --- System data: starships ---
+//
+// Starships share the vehicle pipeline shape (same article-body section
+// walker, same retry-with-backoff). The detail screen adds rows for
+// Hyperdrive / Navicomputer / Hull Type/Class / Manufacturer / Ship's
+// Complement, which the starship parser pulls from the post-stat text
+// paragraph.
+
+final starshipsStoreProvider = Provider<SystemDataStore>((_) {
+  return const SystemDataStore('starships');
+});
+
+final starshipSortProvider =
+    NotifierProvider<StarshipSortNotifier, StarshipSort>(
+  StarshipSortNotifier.new,
+);
+
+class StarshipSortNotifier extends Notifier<StarshipSort> {
+  @override
+  StarshipSort build() => StarshipSort.defaultSort;
+
+  void select(StarshipSortAttr attr) {
+    state = state.attr == attr
+        ? state.copyWith(ascending: !state.ascending)
+        : state.copyWith(attr: attr);
+  }
+}
+
+final starshipsProvider = FutureProvider<List<Starship>>((ref) async {
+  final store = ref.watch(starshipsStoreProvider);
+  final sort = ref.watch(starshipSortProvider);
+  final list = await store.read<Starship>(Starship.fromJson);
+  list.sort((a, b) => compareStarships(a, b, sort));
+  return list;
+});
+
+const String kStarshipCategoryOther = 'Other';
+const List<String> kStarshipCategoryOrder = [
+  'Starfighters',
+  'Shuttles',
+  'Patrol Boats',
+  'Freighters',
+  'Other Transports',
+  'Capital Ships',
+  'Stations',
+  'Legendary',
+  kStarshipCategoryOther,
+];
+
+const String _kStarshipIndexUrl =
+    'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Starships';
+
+const Map<String, String> _kStarshipSectionToCategory = {
+  'STARFIGHTERS': 'Starfighters',
+  'SHUTTLES': 'Shuttles',
+  'PATROL_BOATS': 'Patrol Boats',
+  'FREIGHTERS': 'Freighters',
+  'OTHER_TRANSPORTS': 'Other Transports',
+  'CAPITAL_SHIPS': 'Capital Ships',
+  'STATIONS': 'Stations',
+  'LEGENDARY': 'Legendary',
+};
+
+final starshipsScrapeProvider =
+    NotifierProvider<StarshipsScrapeNotifier, ScrapeState>(
+  StarshipsScrapeNotifier.new,
+);
+
+class StarshipsScrapeResult {
+  final int starships;
+  final int qualities;
+  final int failedPages;
+  final String? starshipsError;
+  final String? qualitiesError;
+  const StarshipsScrapeResult({
+    required this.starships,
+    required this.qualities,
+    this.failedPages = 0,
+    this.starshipsError,
+    this.qualitiesError,
+  });
+}
+
+class StarshipsScrapeNotifier extends Notifier<ScrapeState> {
+  @override
+  ScrapeState build() => const ScrapeIdle();
+
+  Future<StarshipsScrapeResult> refresh() async {
+    if (state is ScrapeRunning) {
+      return const StarshipsScrapeResult(starships: -1, qualities: -1);
+    }
+    state = const ScrapeRunning(0, 0);
+    final scraper = WikiScraper();
+    int starshipsCount = -1;
+    int failedCount = 0;
+    String? starshipsError;
+    try {
+      final index = await discoverByArticleHeaders(
+        scraper: scraper,
+        indexUrl: _kStarshipIndexUrl,
+        sectionToBucket: _kStarshipSectionToCategory,
+      );
+      if (index.isEmpty) {
+        throw StateError(
+            'No starship links found under any of the '
+            '${_kStarshipSectionToCategory.length} tracked sections on '
+            'Category:Starships. Wiki restructured?');
+      }
+      final urls = index.keys.toList(growable: false);
+      state = ScrapeRunning(0, urls.length);
+
+      final all = <Starship>[];
+      var consecutiveFailures = 0;
+      var failedPages = 0;
+      for (var i = 0; i < urls.length; i++) {
+        final url = urls[i];
+        final bucket = index[url]!;
+        Starship? parsed;
+        Object? lastError;
+        for (var attempt = 0; attempt < 3 && parsed == null; attempt++) {
+          if (attempt > 0) {
+            await Future<void>.delayed(
+                Duration(seconds: attempt == 1 ? 1 : 3));
+          }
+          try {
+            final doc = await scraper.fetchDocument(url);
+            parsed = parseStarshipPage(doc, url);
+            lastError = null;
+            break;
+          } catch (e) {
+            lastError = e;
+          }
+        }
+        if (parsed != null) {
+          all.add(_withStarshipCategory(parsed, bucket));
+          consecutiveFailures = 0;
+        } else {
+          if (lastError != null) failedPages++;
+          consecutiveFailures++;
+          if (consecutiveFailures >= 30) {
+            throw StateError(
+                'Network appears to be down — aborted after 30 '
+                'consecutive failures (${i + 1} / ${urls.length} pages).');
+          }
+        }
+        state = ScrapeRunning(i + 1, urls.length);
+      }
+
+      await ref.read(starshipsStoreProvider).write<Starship>(
+            all,
+            (s) => s.toJson(),
+          );
+      ref.invalidate(starshipsProvider);
+      starshipsCount = all.length;
+      failedCount = failedPages;
+    } catch (e) {
+      starshipsError = e.toString();
+      state = ScrapeError(starshipsError);
+    } finally {
+      scraper.close();
+    }
+
+    int qualitiesCount = 0;
+    String? qualitiesError;
+    if (starshipsError == null) {
+      try {
+        qualitiesCount = await ref
+            .read(itemQualitiesScrapeProvider.notifier)
+            .refresh();
+        if (qualitiesCount < 0) {
+          final s = ref.read(itemQualitiesScrapeProvider);
+          qualitiesError = s is ScrapeError ? s.message : 'unknown';
+        }
+      } catch (e) {
+        qualitiesError = e.toString();
+      }
+    }
+
+    if (starshipsError == null) state = const ScrapeIdle();
+    return StarshipsScrapeResult(
+      starships: starshipsCount,
+      qualities: qualitiesCount,
+      failedPages: failedCount,
+      starshipsError: starshipsError,
+      qualitiesError: qualitiesError,
+    );
+  }
+}
+
+Starship _withStarshipCategory(Starship s, String category) {
+  final json = s.toJson();
+  json['category'] = category;
+  return Starship.fromJson(json);
 }

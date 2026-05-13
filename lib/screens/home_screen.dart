@@ -9,6 +9,8 @@ import 'package:swrpg_quickypedia/screens/category_grid_screen.dart';
 import 'package:swrpg_quickypedia/screens/character_bio_screen.dart';
 import 'package:swrpg_quickypedia/screens/gear_type_screen.dart';
 import 'package:swrpg_quickypedia/screens/gear_view_screen.dart';
+import 'package:swrpg_quickypedia/screens/starship_view_screen.dart';
+import 'package:swrpg_quickypedia/screens/starships_type_screen.dart';
 import 'package:swrpg_quickypedia/screens/vehicle_view_screen.dart';
 import 'package:swrpg_quickypedia/screens/vehicles_type_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapon_view_screen.dart';
@@ -17,6 +19,7 @@ import 'package:swrpg_quickypedia/widgets/armor_tile.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
 import 'package:swrpg_quickypedia/widgets/character_tile.dart';
 import 'package:swrpg_quickypedia/widgets/gear_tile.dart';
+import 'package:swrpg_quickypedia/widgets/starship_tile.dart';
 import 'package:swrpg_quickypedia/widgets/vehicle_tile.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_tile.dart';
 
@@ -85,6 +88,12 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  void _openStarshipsTypeScreen(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const StarshipsTypeScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final characters = ref.watch(charactersProvider);
@@ -92,6 +101,7 @@ class HomeScreen extends ConsumerWidget {
     final armors = ref.watch(armorsProvider);
     final gear = ref.watch(gearProvider);
     final vehicles = ref.watch(vehiclesProvider);
+    final starships = ref.watch(starshipsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -317,6 +327,43 @@ class HomeScreen extends ConsumerWidget {
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => VehicleViewScreen(vehicle: v),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            CategoryRow(
+              title: 'Starships',
+              onTitleTap: () => _openStarshipsTypeScreen(context),
+              child: starships.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Center(child: Text('Failed: $error')),
+                ),
+                data: (list) {
+                  if (list.isEmpty) {
+                    return const ComingSoonTile(icon: Icons.rocket_launch);
+                  }
+                  return ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (_, i) {
+                      final s = list[i];
+                      return SizedBox(
+                        width: 120,
+                        child: StarshipTile(
+                          starship: s,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => StarshipViewScreen(starship: s),
                             ),
                           ),
                         ),

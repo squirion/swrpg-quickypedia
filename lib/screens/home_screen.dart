@@ -7,11 +7,14 @@ import 'package:swrpg_quickypedia/screens/armors_type_screen.dart';
 import 'package:swrpg_quickypedia/screens/campaign_input_screen.dart';
 import 'package:swrpg_quickypedia/screens/category_grid_screen.dart';
 import 'package:swrpg_quickypedia/screens/character_bio_screen.dart';
+import 'package:swrpg_quickypedia/screens/gear_type_screen.dart';
+import 'package:swrpg_quickypedia/screens/gear_view_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapon_view_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapons_type_screen.dart';
 import 'package:swrpg_quickypedia/widgets/armor_tile.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
 import 'package:swrpg_quickypedia/widgets/character_tile.dart';
+import 'package:swrpg_quickypedia/widgets/gear_tile.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_tile.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -67,11 +70,18 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  void _openGearTypeScreen(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const GearTypeScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final characters = ref.watch(charactersProvider);
     final weapons = ref.watch(weaponsProvider);
     final armors = ref.watch(armorsProvider);
+    final gear = ref.watch(gearProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -234,9 +244,40 @@ class HomeScreen extends ConsumerWidget {
             ),
             CategoryRow(
               title: 'Gear',
-              onTitleTap: () =>
-                  _openComingSoon(context, 'Gear', Icons.inventory_2),
-              child: const ComingSoonTile(icon: Icons.inventory_2),
+              onTitleTap: () => _openGearTypeScreen(context),
+              child: gear.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Center(child: Text('Failed: $error')),
+                ),
+                data: (list) {
+                  if (list.isEmpty) {
+                    return const ComingSoonTile(icon: Icons.inventory_2);
+                  }
+                  return ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (_, i) {
+                      final g = list[i];
+                      return SizedBox(
+                        width: 120,
+                        child: GearTile(
+                          gear: g,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => GearViewScreen(gear: g),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
             CategoryRow(
               title: 'Vehicles',

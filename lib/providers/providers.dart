@@ -5,6 +5,8 @@ import 'package:swrpg_quickypedia/models/armor.dart';
 import 'package:swrpg_quickypedia/models/armor_sort.dart';
 import 'package:swrpg_quickypedia/models/campaign.dart';
 import 'package:swrpg_quickypedia/models/character.dart';
+import 'package:swrpg_quickypedia/models/gear.dart';
+import 'package:swrpg_quickypedia/models/gear_sort.dart';
 import 'package:swrpg_quickypedia/models/item_quality.dart';
 import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/models/weapon_sort.dart';
@@ -12,13 +14,17 @@ import 'package:swrpg_quickypedia/services/armor_image_upload.dart';
 import 'package:swrpg_quickypedia/services/armor_sort.dart';
 import 'package:swrpg_quickypedia/services/auth_service.dart';
 import 'package:swrpg_quickypedia/services/api_client.dart';
+import 'package:swrpg_quickypedia/services/gear_image_upload.dart';
+import 'package:swrpg_quickypedia/services/gear_sort.dart';
 import 'package:swrpg_quickypedia/services/github_data_repo.dart';
 import 'package:swrpg_quickypedia/services/parsers/armor_parser.dart';
+import 'package:swrpg_quickypedia/services/parsers/gear_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/item_qualities_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/weapon_parser.dart';
 import 'package:swrpg_quickypedia/services/system_data_store.dart';
 import 'package:swrpg_quickypedia/services/weapon_image_upload.dart';
 import 'package:swrpg_quickypedia/services/weapon_sort.dart';
+import 'package:swrpg_quickypedia/services/wiki_index_walker.dart';
 import 'package:swrpg_quickypedia/services/wiki_scraper.dart';
 
 // --- Auth ---
@@ -148,6 +154,14 @@ final armorImageUploaderProvider = Provider<ArmorImageUploader>((ref) {
   return uploader;
 });
 
+/// Uploads a gear image to the data repo and patches the cached
+/// `gear.json` with the new URL.
+final gearImageUploaderProvider = Provider<GearImageUploader>((ref) {
+  final uploader = GearImageUploader(ref.watch(githubDataRepoProvider));
+  ref.onDispose(uploader.close);
+  return uploader;
+});
+
 /// HTTP headers to attach when fetching an image from the private data
 /// repo. Returns null for non-github-raw URLs so we don't leak the PAT
 /// to arbitrary origins.
@@ -163,6 +177,7 @@ Map<String, String>? githubAuthHeadersFor(String url, WidgetRef ref) {
 const Map<String, String> _kCloudDatabases = {
   'weapons': 'databases/weapons.json',
   'armors': 'databases/armors.json',
+  'gear': 'databases/gear.json',
   'item_qualities': 'databases/item_qualities.json',
 };
 
@@ -230,6 +245,7 @@ class CloudSyncNotifier extends Notifier<CloudSyncState> {
       }
       ref.invalidate(weaponsProvider);
       ref.invalidate(armorsProvider);
+      ref.invalidate(gearProvider);
       ref.invalidate(itemQualitiesProvider);
       return CloudSyncResult(
         direction: 'pull',
@@ -749,51 +765,12 @@ class ArmorsScrapeNotifier extends Notifier<ScrapeState> {
   }
 }
 
-/// Walk the `Category:Armor` article body and build a map of
-/// `armor_page_url → bucket_label`. The wiki groups armors under H2/H3
-/// headers with anchor IDs from [_kArmorSectionToCategory]; everything
-/// outside those sections is ignored. Duplicate links (a few sections
-/// repeat the same armor) keep the FIRST bucket they appear in.
-Future<Map<String, String>> _discoverArmorIndex(WikiScraper scraper) async {
-  final doc = await scraper.fetchDocument(_kArmorIndexUrl);
-  final article = doc.querySelector('.mw-parser-output');
-  if (article == null) return const {};
-
-  final out = <String, String>{};
-  String? currentBucket;
-  final origin = Uri.parse(_kArmorIndexUrl).origin;
-
-  void visit(dynamic node) {
-    final tag = node.localName as String?;
-    if (tag == 'h1' || tag == 'h2' || tag == 'h3' || tag == 'h4') {
-      // Anchor ID lives on the heading itself or on its `.mw-headline`
-      // child (MediaWiki convention varies by theme).
-      final id = (node.attributes['id'] as String?) ??
-          node.querySelector('[id]')?.attributes['id'];
-      currentBucket = id == null ? null : _kArmorSectionToCategory[id];
-      return;
-    }
-    if (tag == 'a') {
-      final href = node.attributes['href'] as String?;
-      if (href != null &&
-          href.startsWith('/wiki/') &&
-          !href.contains(':') &&
-          currentBucket != null) {
-        final url = '$origin$href';
-        out.putIfAbsent(url, () => currentBucket!);
-      }
-      return;
-    }
-    for (final c in node.children) {
-      visit(c);
-    }
-  }
-
-  for (final c in article.children) {
-    visit(c);
-  }
-  return out;
-}
+Future<Map<String, String>> _discoverArmorIndex(WikiScraper scraper) =>
+    discoverByArticleHeaders(
+      scraper: scraper,
+      indexUrl: _kArmorIndexUrl,
+      sectionToBucket: _kArmorSectionToCategory,
+    );
 
 /// Build a copy of [a] with [category] replaced. Armor is immutable and
 /// doesn't carry a copyWith, so rebuild via JSON.
@@ -801,4 +778,226 @@ Armor _withCategory(Armor a, String category) {
   final json = a.toJson();
   json['category'] = category;
   return Armor.fromJson(json);
+}
+
+// --- System data: gear ---
+//
+// Mirrors the armor block. Sections come from the hand-written
+// `Category:Gear` article body; the discovery helper walks H2/H3
+// anchor IDs and the parser fetches each linked page.
+
+final gearStoreProvider = Provider<SystemDataStore>((_) {
+  return const SystemDataStore('gear');
+});
+
+final gearSortProvider =
+    NotifierProvider<GearSortNotifier, GearSort>(GearSortNotifier.new);
+
+class GearSortNotifier extends Notifier<GearSort> {
+  @override
+  GearSort build() => GearSort.defaultSort;
+
+  void select(GearSortAttr attr) {
+    state = state.attr == attr
+        ? state.copyWith(ascending: !state.ascending)
+        : state.copyWith(attr: attr);
+  }
+}
+
+final gearProvider = FutureProvider<List<Gear>>((ref) async {
+  final store = ref.watch(gearStoreProvider);
+  final sort = ref.watch(gearSortProvider);
+  final list = await store.read<Gear>(Gear.fromJson);
+  list.sort((a, b) => compareGear(a, b, sort));
+  return list;
+});
+
+/// Canonical row order for the gear type screen, mirroring the wiki's
+/// article-body section order (top to bottom). Items whose `category`
+/// is null or doesn't match one of these labels land in "Other".
+const String kGearCategoryOther = 'Other';
+const List<String> kGearCategoryOrder = [
+  'Communication Technology',
+  'Carrying & Load-Bearing Gear',
+  'Drugs',
+  'Poisons',
+  'Other Consumables & Food',
+  'Cybernetics',
+  'Detection Technology',
+  'Field Equipment',
+  'Infiltration',
+  'Medical',
+  'Relics',
+  'Security',
+  'Survival',
+  'Accessories',
+  'Electronics',
+  'Recreation',
+  'Tools',
+  'Legendary',
+  kGearCategoryOther,
+];
+
+const String _kGearIndexUrl =
+    'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Gear';
+
+/// Section anchor ID → canonical bucket label. Keys come from a one-shot
+/// discovery pass on the wiki article body; values are the user-facing
+/// labels in [kGearCategoryOrder].
+const Map<String, String> _kGearSectionToCategory = {
+  'COMMUNICATION_TECHNOLOGY': 'Communication Technology',
+  'CARRYING_.26_LOAD-BEARING_GEAR': 'Carrying & Load-Bearing Gear',
+  'DRUGS': 'Drugs',
+  'POISONS': 'Poisons',
+  'OTHER_CONSUMABLES_AND_FOOD': 'Other Consumables & Food',
+  'CYBERNETICS': 'Cybernetics',
+  'DETECTION_TECHNOLOGY': 'Detection Technology',
+  'FIELD_EQUIPMENT': 'Field Equipment',
+  'INFILTRATION': 'Infiltration',
+  'MEDICAL': 'Medical',
+  'RELICS': 'Relics',
+  'SECURITY': 'Security',
+  'SURVIVAL': 'Survival',
+  'ACCESSORIES': 'Accessories',
+  'ELECTRONICS': 'Electronics',
+  'RECREATION': 'Recreation',
+  'TOOLS': 'Tools',
+  'LEGENDARY': 'Legendary',
+};
+
+final gearScrapeProvider =
+    NotifierProvider<GearScrapeNotifier, ScrapeState>(
+  GearScrapeNotifier.new,
+);
+
+class GearScrapeResult {
+  final int gear;
+  final int qualities;
+  final int failedPages;
+  final String? gearError;
+  final String? qualitiesError;
+  const GearScrapeResult({
+    required this.gear,
+    required this.qualities,
+    this.failedPages = 0,
+    this.gearError,
+    this.qualitiesError,
+  });
+}
+
+class GearScrapeNotifier extends Notifier<ScrapeState> {
+  @override
+  ScrapeState build() => const ScrapeIdle();
+
+  Future<GearScrapeResult> refresh() async {
+    if (state is ScrapeRunning) {
+      return const GearScrapeResult(gear: -1, qualities: -1);
+    }
+    state = const ScrapeRunning(0, 0);
+    final scraper = WikiScraper();
+    int gearCount = -1;
+    int failedCount = 0;
+    String? gearError;
+    try {
+      final index = await discoverByArticleHeaders(
+        scraper: scraper,
+        indexUrl: _kGearIndexUrl,
+        sectionToBucket: _kGearSectionToCategory,
+      );
+      if (index.isEmpty) {
+        throw StateError(
+            'No gear links found under any of the ${_kGearSectionToCategory.length} '
+            'tracked sections on Category:Gear. Wiki restructured?');
+      }
+      final urls = index.keys.toList(growable: false);
+      state = ScrapeRunning(0, urls.length);
+
+      final all = <Gear>[];
+      var consecutiveFailures = 0;
+      var failedPages = 0;
+      for (var i = 0; i < urls.length; i++) {
+        final url = urls[i];
+        final bucket = index[url]!;
+        Gear? parsed;
+        Object? lastError;
+        // 3 attempts with 1s / 3s backoff. Soaks up transient mobile-
+        // network blips without masking real parse failures (the
+        // parser itself raises no exceptions — it returns null).
+        for (var attempt = 0; attempt < 3 && parsed == null; attempt++) {
+          if (attempt > 0) {
+            await Future<void>.delayed(
+                Duration(seconds: attempt == 1 ? 1 : 3));
+          }
+          try {
+            final doc = await scraper.fetchDocument(url);
+            parsed = parseGearPage(doc, url);
+            lastError = null;
+            break;
+          } catch (e) {
+            lastError = e;
+          }
+        }
+        if (parsed != null) {
+          all.add(_withGearCategory(parsed, bucket));
+          consecutiveFailures = 0;
+        } else {
+          if (lastError != null) failedPages++;
+          consecutiveFailures++;
+          // 30 consecutive failures = network is definitively down;
+          // bail out so the user gets a clear error instead of a long
+          // silent wait through hundreds of timeouts.
+          if (consecutiveFailures >= 30) {
+            throw StateError(
+                'Network appears to be down — aborted after 30 '
+                'consecutive failures (${i + 1} / ${urls.length} pages).');
+          }
+        }
+        state = ScrapeRunning(i + 1, urls.length);
+      }
+
+      await ref.read(gearStoreProvider).write<Gear>(
+            all,
+            (g) => g.toJson(),
+          );
+      ref.invalidate(gearProvider);
+      gearCount = all.length;
+      failedCount = failedPages;
+    } catch (e) {
+      gearError = e.toString();
+      state = ScrapeError(gearError);
+    } finally {
+      scraper.close();
+    }
+
+    int qualitiesCount = 0;
+    String? qualitiesError;
+    if (gearError == null) {
+      try {
+        qualitiesCount = await ref
+            .read(itemQualitiesScrapeProvider.notifier)
+            .refresh();
+        if (qualitiesCount < 0) {
+          final s = ref.read(itemQualitiesScrapeProvider);
+          qualitiesError = s is ScrapeError ? s.message : 'unknown';
+        }
+      } catch (e) {
+        qualitiesError = e.toString();
+      }
+    }
+
+    if (gearError == null) state = const ScrapeIdle();
+    return GearScrapeResult(
+      gear: gearCount,
+      qualities: qualitiesCount,
+      failedPages: failedCount,
+      gearError: gearError,
+      qualitiesError: qualitiesError,
+    );
+  }
+}
+
+Gear _withGearCategory(Gear g, String category) {
+  final json = g.toJson();
+  json['category'] = category;
+  return Gear.fromJson(json);
 }

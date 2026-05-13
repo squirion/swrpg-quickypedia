@@ -8,6 +8,8 @@ import 'package:swrpg_quickypedia/models/character.dart';
 import 'package:swrpg_quickypedia/models/gear.dart';
 import 'package:swrpg_quickypedia/models/gear_sort.dart';
 import 'package:swrpg_quickypedia/models/item_quality.dart';
+import 'package:swrpg_quickypedia/models/vehicle.dart';
+import 'package:swrpg_quickypedia/models/vehicle_sort.dart';
 import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/models/weapon_sort.dart';
 import 'package:swrpg_quickypedia/services/armor_image_upload.dart';
@@ -20,7 +22,10 @@ import 'package:swrpg_quickypedia/services/github_data_repo.dart';
 import 'package:swrpg_quickypedia/services/parsers/armor_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/gear_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/item_qualities_parser.dart';
+import 'package:swrpg_quickypedia/services/parsers/vehicle_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/weapon_parser.dart';
+import 'package:swrpg_quickypedia/services/vehicle_image_upload.dart';
+import 'package:swrpg_quickypedia/services/vehicle_sort.dart';
 import 'package:swrpg_quickypedia/services/system_data_store.dart';
 import 'package:swrpg_quickypedia/services/weapon_image_upload.dart';
 import 'package:swrpg_quickypedia/services/weapon_sort.dart';
@@ -162,6 +167,14 @@ final gearImageUploaderProvider = Provider<GearImageUploader>((ref) {
   return uploader;
 });
 
+/// Uploads a vehicle image to the data repo and patches the cached
+/// `vehicles.json` with the new URL.
+final vehicleImageUploaderProvider = Provider<VehicleImageUploader>((ref) {
+  final uploader = VehicleImageUploader(ref.watch(githubDataRepoProvider));
+  ref.onDispose(uploader.close);
+  return uploader;
+});
+
 /// HTTP headers to attach when fetching an image from the private data
 /// repo. Returns null for non-github-raw URLs so we don't leak the PAT
 /// to arbitrary origins.
@@ -178,6 +191,7 @@ const Map<String, String> _kCloudDatabases = {
   'weapons': 'databases/weapons.json',
   'armors': 'databases/armors.json',
   'gear': 'databases/gear.json',
+  'vehicles': 'databases/vehicles.json',
   'item_qualities': 'databases/item_qualities.json',
 };
 
@@ -246,6 +260,7 @@ class CloudSyncNotifier extends Notifier<CloudSyncState> {
       ref.invalidate(weaponsProvider);
       ref.invalidate(armorsProvider);
       ref.invalidate(gearProvider);
+      ref.invalidate(vehiclesProvider);
       ref.invalidate(itemQualitiesProvider);
       return CloudSyncResult(
         direction: 'pull',
@@ -1000,4 +1015,199 @@ Gear _withGearCategory(Gear g, String category) {
   final json = g.toJson();
   json['category'] = category;
   return Gear.fromJson(json);
+}
+
+// --- System data: vehicles ---
+//
+// Same article-body-walker pattern as armor + gear. Vehicles carry the
+// 4-defense-zone alt format and a plain-text transport-stats paragraph
+// below the stat image; both are extracted by the vehicle parser.
+
+final vehiclesStoreProvider = Provider<SystemDataStore>((_) {
+  return const SystemDataStore('vehicles');
+});
+
+final vehicleSortProvider =
+    NotifierProvider<VehicleSortNotifier, VehicleSort>(
+  VehicleSortNotifier.new,
+);
+
+class VehicleSortNotifier extends Notifier<VehicleSort> {
+  @override
+  VehicleSort build() => VehicleSort.defaultSort;
+
+  void select(VehicleSortAttr attr) {
+    state = state.attr == attr
+        ? state.copyWith(ascending: !state.ascending)
+        : state.copyWith(attr: attr);
+  }
+}
+
+final vehiclesProvider = FutureProvider<List<Vehicle>>((ref) async {
+  final store = ref.watch(vehiclesStoreProvider);
+  final sort = ref.watch(vehicleSortProvider);
+  final list = await store.read<Vehicle>(Vehicle.fromJson);
+  list.sort((a, b) => compareVehicles(a, b, sort));
+  return list;
+});
+
+const String kVehicleCategoryOther = 'Other';
+const List<String> kVehicleCategoryOrder = [
+  'Walkers',
+  'Wheeled',
+  'Tracked',
+  'Submersibles',
+  'Landspeeders',
+  'Airspeeders',
+  'Podracers',
+  'Equipment as Vehicles',
+  'Legendary',
+  kVehicleCategoryOther,
+];
+
+const String _kVehicleIndexUrl =
+    'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Vehicles';
+
+const Map<String, String> _kVehicleSectionToCategory = {
+  'WALKERS': 'Walkers',
+  'WHEELED': 'Wheeled',
+  'TRACKED': 'Tracked',
+  'SUBMERSIBLES': 'Submersibles',
+  'LANDSPEEDERS': 'Landspeeders',
+  'AIRSPEEDERS': 'Airspeeders',
+  'PODRACERS': 'Podracers',
+  'EQUIPMENT_AS_VEHICLES': 'Equipment as Vehicles',
+  'LEGENDARY': 'Legendary',
+};
+
+final vehiclesScrapeProvider =
+    NotifierProvider<VehiclesScrapeNotifier, ScrapeState>(
+  VehiclesScrapeNotifier.new,
+);
+
+class VehiclesScrapeResult {
+  final int vehicles;
+  final int qualities;
+  final int failedPages;
+  final String? vehiclesError;
+  final String? qualitiesError;
+  const VehiclesScrapeResult({
+    required this.vehicles,
+    required this.qualities,
+    this.failedPages = 0,
+    this.vehiclesError,
+    this.qualitiesError,
+  });
+}
+
+class VehiclesScrapeNotifier extends Notifier<ScrapeState> {
+  @override
+  ScrapeState build() => const ScrapeIdle();
+
+  Future<VehiclesScrapeResult> refresh() async {
+    if (state is ScrapeRunning) {
+      return const VehiclesScrapeResult(vehicles: -1, qualities: -1);
+    }
+    state = const ScrapeRunning(0, 0);
+    final scraper = WikiScraper();
+    int vehiclesCount = -1;
+    int failedCount = 0;
+    String? vehiclesError;
+    try {
+      final index = await discoverByArticleHeaders(
+        scraper: scraper,
+        indexUrl: _kVehicleIndexUrl,
+        sectionToBucket: _kVehicleSectionToCategory,
+      );
+      if (index.isEmpty) {
+        throw StateError(
+            'No vehicle links found under any of the '
+            '${_kVehicleSectionToCategory.length} tracked sections on '
+            'Category:Vehicles. Wiki restructured?');
+      }
+      final urls = index.keys.toList(growable: false);
+      state = ScrapeRunning(0, urls.length);
+
+      final all = <Vehicle>[];
+      var consecutiveFailures = 0;
+      var failedPages = 0;
+      for (var i = 0; i < urls.length; i++) {
+        final url = urls[i];
+        final bucket = index[url]!;
+        Vehicle? parsed;
+        Object? lastError;
+        for (var attempt = 0; attempt < 3 && parsed == null; attempt++) {
+          if (attempt > 0) {
+            await Future<void>.delayed(
+                Duration(seconds: attempt == 1 ? 1 : 3));
+          }
+          try {
+            final doc = await scraper.fetchDocument(url);
+            parsed = parseVehiclePage(doc, url);
+            lastError = null;
+            break;
+          } catch (e) {
+            lastError = e;
+          }
+        }
+        if (parsed != null) {
+          all.add(_withVehicleCategory(parsed, bucket));
+          consecutiveFailures = 0;
+        } else {
+          if (lastError != null) failedPages++;
+          consecutiveFailures++;
+          if (consecutiveFailures >= 30) {
+            throw StateError(
+                'Network appears to be down — aborted after 30 '
+                'consecutive failures (${i + 1} / ${urls.length} pages).');
+          }
+        }
+        state = ScrapeRunning(i + 1, urls.length);
+      }
+
+      await ref.read(vehiclesStoreProvider).write<Vehicle>(
+            all,
+            (v) => v.toJson(),
+          );
+      ref.invalidate(vehiclesProvider);
+      vehiclesCount = all.length;
+      failedCount = failedPages;
+    } catch (e) {
+      vehiclesError = e.toString();
+      state = ScrapeError(vehiclesError);
+    } finally {
+      scraper.close();
+    }
+
+    int qualitiesCount = 0;
+    String? qualitiesError;
+    if (vehiclesError == null) {
+      try {
+        qualitiesCount = await ref
+            .read(itemQualitiesScrapeProvider.notifier)
+            .refresh();
+        if (qualitiesCount < 0) {
+          final s = ref.read(itemQualitiesScrapeProvider);
+          qualitiesError = s is ScrapeError ? s.message : 'unknown';
+        }
+      } catch (e) {
+        qualitiesError = e.toString();
+      }
+    }
+
+    if (vehiclesError == null) state = const ScrapeIdle();
+    return VehiclesScrapeResult(
+      vehicles: vehiclesCount,
+      qualities: qualitiesCount,
+      failedPages: failedCount,
+      vehiclesError: vehiclesError,
+      qualitiesError: qualitiesError,
+    );
+  }
+}
+
+Vehicle _withVehicleCategory(Vehicle v, String category) {
+  final json = v.toJson();
+  json['category'] = category;
+  return Vehicle.fromJson(json);
 }

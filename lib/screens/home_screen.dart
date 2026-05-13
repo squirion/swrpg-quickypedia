@@ -9,12 +9,15 @@ import 'package:swrpg_quickypedia/screens/category_grid_screen.dart';
 import 'package:swrpg_quickypedia/screens/character_bio_screen.dart';
 import 'package:swrpg_quickypedia/screens/gear_type_screen.dart';
 import 'package:swrpg_quickypedia/screens/gear_view_screen.dart';
+import 'package:swrpg_quickypedia/screens/vehicle_view_screen.dart';
+import 'package:swrpg_quickypedia/screens/vehicles_type_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapon_view_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapons_type_screen.dart';
 import 'package:swrpg_quickypedia/widgets/armor_tile.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
 import 'package:swrpg_quickypedia/widgets/character_tile.dart';
 import 'package:swrpg_quickypedia/widgets/gear_tile.dart';
+import 'package:swrpg_quickypedia/widgets/vehicle_tile.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_tile.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -76,12 +79,19 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  void _openVehiclesTypeScreen(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const VehiclesTypeScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final characters = ref.watch(charactersProvider);
     final weapons = ref.watch(weaponsProvider);
     final armors = ref.watch(armorsProvider);
     final gear = ref.watch(gearProvider);
+    final vehicles = ref.watch(vehiclesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -281,9 +291,40 @@ class HomeScreen extends ConsumerWidget {
             ),
             CategoryRow(
               title: 'Vehicles',
-              onTitleTap: () => _openComingSoon(
-                  context, 'Vehicles', Icons.directions_car),
-              child: const ComingSoonTile(icon: Icons.directions_car),
+              onTitleTap: () => _openVehiclesTypeScreen(context),
+              child: vehicles.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Center(child: Text('Failed: $error')),
+                ),
+                data: (list) {
+                  if (list.isEmpty) {
+                    return const ComingSoonTile(icon: Icons.directions_car);
+                  }
+                  return ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (_, i) {
+                      final v = list[i];
+                      return SizedBox(
+                        width: 120,
+                        child: VehicleTile(
+                          vehicle: v,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => VehicleViewScreen(vehicle: v),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
           ],
         ),

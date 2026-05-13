@@ -4,6 +4,8 @@ import 'package:swrpg_quickypedia/models/character.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/screens/armor_view_screen.dart';
 import 'package:swrpg_quickypedia/screens/armors_type_screen.dart';
+import 'package:swrpg_quickypedia/screens/beast_view_screen.dart';
+import 'package:swrpg_quickypedia/screens/beasts_type_screen.dart';
 import 'package:swrpg_quickypedia/screens/campaign_input_screen.dart';
 import 'package:swrpg_quickypedia/screens/category_grid_screen.dart';
 import 'package:swrpg_quickypedia/screens/character_bio_screen.dart';
@@ -16,6 +18,7 @@ import 'package:swrpg_quickypedia/screens/vehicles_type_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapon_view_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapons_type_screen.dart';
 import 'package:swrpg_quickypedia/widgets/armor_tile.dart';
+import 'package:swrpg_quickypedia/widgets/beast_tile.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
 import 'package:swrpg_quickypedia/widgets/character_tile.dart';
 import 'package:swrpg_quickypedia/widgets/gear_tile.dart';
@@ -94,6 +97,12 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  void _openBeastsTypeScreen(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const BeastsTypeScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final characters = ref.watch(charactersProvider);
@@ -102,6 +111,7 @@ class HomeScreen extends ConsumerWidget {
     final gear = ref.watch(gearProvider);
     final vehicles = ref.watch(vehiclesProvider);
     final starships = ref.watch(starshipsProvider);
+    final beasts = ref.watch(beastsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -364,6 +374,43 @@ class HomeScreen extends ConsumerWidget {
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => StarshipViewScreen(starship: s),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            CategoryRow(
+              title: 'Beasts',
+              onTitleTap: () => _openBeastsTypeScreen(context),
+              child: beasts.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Center(child: Text('Failed: $error')),
+                ),
+                data: (list) {
+                  if (list.isEmpty) {
+                    return const ComingSoonTile(icon: Icons.pets);
+                  }
+                  return ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (_, i) {
+                      final b = list[i];
+                      return SizedBox(
+                        width: 120,
+                        child: BeastTile(
+                          beast: b,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => BeastViewScreen(beast: b),
                             ),
                           ),
                         ),

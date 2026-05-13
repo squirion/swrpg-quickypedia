@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swrpg_quickypedia/models/armor.dart';
 import 'package:swrpg_quickypedia/models/armor_sort.dart';
+import 'package:swrpg_quickypedia/models/beast.dart';
+import 'package:swrpg_quickypedia/models/beast_sort.dart';
 import 'package:swrpg_quickypedia/models/campaign.dart';
 import 'package:swrpg_quickypedia/models/character.dart';
 import 'package:swrpg_quickypedia/models/gear.dart';
@@ -18,10 +20,13 @@ import 'package:swrpg_quickypedia/services/armor_image_upload.dart';
 import 'package:swrpg_quickypedia/services/armor_sort.dart';
 import 'package:swrpg_quickypedia/services/auth_service.dart';
 import 'package:swrpg_quickypedia/services/api_client.dart';
+import 'package:swrpg_quickypedia/services/beast_image_upload.dart';
+import 'package:swrpg_quickypedia/services/beast_sort.dart';
 import 'package:swrpg_quickypedia/services/gear_image_upload.dart';
 import 'package:swrpg_quickypedia/services/gear_sort.dart';
 import 'package:swrpg_quickypedia/services/github_data_repo.dart';
 import 'package:swrpg_quickypedia/services/parsers/armor_parser.dart';
+import 'package:swrpg_quickypedia/services/parsers/beast_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/gear_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/item_qualities_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/starship_parser.dart';
@@ -188,6 +193,14 @@ final starshipImageUploaderProvider = Provider<StarshipImageUploader>((ref) {
   return uploader;
 });
 
+/// Uploads a beast image to the data repo and patches the cached
+/// `beasts.json` with the new URL.
+final beastImageUploaderProvider = Provider<BeastImageUploader>((ref) {
+  final uploader = BeastImageUploader(ref.watch(githubDataRepoProvider));
+  ref.onDispose(uploader.close);
+  return uploader;
+});
+
 /// HTTP headers to attach when fetching an image from the private data
 /// repo. Returns null for non-github-raw URLs so we don't leak the PAT
 /// to arbitrary origins.
@@ -206,6 +219,7 @@ const Map<String, String> _kCloudDatabases = {
   'gear': 'databases/gear.json',
   'vehicles': 'databases/vehicles.json',
   'starships': 'databases/starships.json',
+  'beasts': 'databases/beasts.json',
   'item_qualities': 'databases/item_qualities.json',
 };
 
@@ -276,6 +290,7 @@ class CloudSyncNotifier extends Notifier<CloudSyncState> {
       ref.invalidate(gearProvider);
       ref.invalidate(vehiclesProvider);
       ref.invalidate(starshipsProvider);
+      ref.invalidate(beastsProvider);
       ref.invalidate(itemQualitiesProvider);
       return CloudSyncResult(
         direction: 'pull',
@@ -1420,4 +1435,167 @@ Starship _withStarshipCategory(Starship s, String category) {
   final json = s.toJson();
   json['category'] = category;
   return Starship.fromJson(json);
+}
+
+// --- System data: beasts ---
+//
+// Beasts are creatures rather than items — same article-body walker
+// for discovery, same retry-with-backoff, but the parser pulls two
+// separate stat-image alts (commerce + creature) and the detail
+// screen has a bespoke characteristic-grid layout.
+
+final beastsStoreProvider = Provider<SystemDataStore>((_) {
+  return const SystemDataStore('beasts');
+});
+
+final beastSortProvider =
+    NotifierProvider<BeastSortNotifier, BeastSort>(BeastSortNotifier.new);
+
+class BeastSortNotifier extends Notifier<BeastSort> {
+  @override
+  BeastSort build() => BeastSort.defaultSort;
+
+  void select(BeastSortAttr attr) {
+    state = state.attr == attr
+        ? state.copyWith(ascending: !state.ascending)
+        : state.copyWith(attr: attr);
+  }
+}
+
+final beastsProvider = FutureProvider<List<Beast>>((ref) async {
+  final store = ref.watch(beastsStoreProvider);
+  final sort = ref.watch(beastSortProvider);
+  final list = await store.read<Beast>(Beast.fromJson);
+  list.sort((a, b) => compareBeasts(a, b, sort));
+  return list;
+});
+
+const String kBeastCategoryOther = 'Other';
+const List<String> kBeastCategoryOrder = [
+  'Riding Beasts',
+  'Small Pets (Silh 0)',
+  'Companions (Silh 1)',
+  kBeastCategoryOther,
+];
+
+const String _kBeastIndexUrl =
+    'https://star-wars-rpg-ffg.fandom.com/wiki/Category:Beast';
+
+const Map<String, String> _kBeastSectionToCategory = {
+  'RIDING_BEASTS': 'Riding Beasts',
+  'SMALL_PETS_.28SILH0.29': 'Small Pets (Silh 0)',
+  'COMPANIONS_.28SILH1.29': 'Companions (Silh 1)',
+};
+
+final beastsScrapeProvider =
+    NotifierProvider<BeastsScrapeNotifier, ScrapeState>(
+  BeastsScrapeNotifier.new,
+);
+
+class BeastsScrapeResult {
+  final int beasts;
+  final int failedPages;
+  final String? beastsError;
+  const BeastsScrapeResult({
+    required this.beasts,
+    this.failedPages = 0,
+    this.beastsError,
+  });
+}
+
+class BeastsScrapeNotifier extends Notifier<ScrapeState> {
+  @override
+  ScrapeState build() => const ScrapeIdle();
+
+  Future<BeastsScrapeResult> refresh() async {
+    if (state is ScrapeRunning) {
+      return const BeastsScrapeResult(beasts: -1);
+    }
+    state = const ScrapeRunning(0, 0);
+    final scraper = WikiScraper();
+    int beastsCount = -1;
+    int failedCount = 0;
+    String? beastsError;
+    try {
+      final index = await discoverByArticleHeaders(
+        scraper: scraper,
+        indexUrl: _kBeastIndexUrl,
+        sectionToBucket: _kBeastSectionToCategory,
+      );
+      if (index.isEmpty) {
+        throw StateError(
+            'No beast links found under any of the '
+            '${_kBeastSectionToCategory.length} tracked sections on '
+            'Category:Beast. Wiki restructured?');
+      }
+      final urls = index.keys.toList(growable: false);
+      state = ScrapeRunning(0, urls.length);
+
+      final all = <Beast>[];
+      var consecutiveFailures = 0;
+      var failedPages = 0;
+      for (var i = 0; i < urls.length; i++) {
+        final url = urls[i];
+        final bucket = index[url]!;
+        Beast? parsed;
+        Object? lastError;
+        for (var attempt = 0; attempt < 3 && parsed == null; attempt++) {
+          if (attempt > 0) {
+            await Future<void>.delayed(
+                Duration(seconds: attempt == 1 ? 1 : 3));
+          }
+          try {
+            final doc = await scraper.fetchDocument(url);
+            parsed = parseBeastPage(doc, url);
+            lastError = null;
+            break;
+          } catch (e) {
+            lastError = e;
+          }
+        }
+        if (parsed != null) {
+          all.add(_withBeastCategory(parsed, bucket));
+          consecutiveFailures = 0;
+        } else {
+          if (lastError != null) failedPages++;
+          consecutiveFailures++;
+          if (consecutiveFailures >= 30) {
+            throw StateError(
+                'Network appears to be down — aborted after 30 '
+                'consecutive failures (${i + 1} / ${urls.length} pages).');
+          }
+        }
+        state = ScrapeRunning(i + 1, urls.length);
+      }
+
+      await ref.read(beastsStoreProvider).write<Beast>(
+            all,
+            (b) => b.toJson(),
+          );
+      ref.invalidate(beastsProvider);
+      beastsCount = all.length;
+      failedCount = failedPages;
+    } catch (e) {
+      beastsError = e.toString();
+      state = ScrapeError(beastsError);
+    } finally {
+      scraper.close();
+    }
+
+    // No chained qualities scrape — beast special qualities (e.g.
+    // "Sure-footed", "Pack Instincts") live inside the abilities text
+    // verbatim and aren't part of the shared Item Qualities glossary.
+    if (beastsError == null) state = const ScrapeIdle();
+    return BeastsScrapeResult(
+      beasts: beastsCount,
+      failedPages: failedCount,
+      beastsError: beastsError,
+    );
+  }
+}
+
+Beast _withBeastCategory(Beast b, String category) {
+  final json = b.toJson();
+  json['category'] = category;
+  return Beast.fromJson(json);
 }

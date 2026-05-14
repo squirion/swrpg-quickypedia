@@ -10,6 +10,7 @@ enum VehicleSortAttr {
   hullTrauma,
   encumbranceCapacity,
   passengerCapacity,
+  alphabetical,
 }
 
 extension VehicleSortAttrLabel on VehicleSortAttr {
@@ -23,6 +24,7 @@ extension VehicleSortAttrLabel on VehicleSortAttr {
         VehicleSortAttr.hullTrauma => 'Hull Trauma',
         VehicleSortAttr.encumbranceCapacity => 'Encum. Capacity',
         VehicleSortAttr.passengerCapacity => 'Passengers',
+        VehicleSortAttr.alphabetical => 'Alphabetical',
       };
 
   String get shortLabel => switch (this) {
@@ -35,6 +37,7 @@ extension VehicleSortAttrLabel on VehicleSortAttr {
         VehicleSortAttr.hullTrauma => 'HULL',
         VehicleSortAttr.encumbranceCapacity => 'ENCAP',
         VehicleSortAttr.passengerCapacity => 'PAX',
+        VehicleSortAttr.alphabetical => 'A→Z',
       };
 }
 

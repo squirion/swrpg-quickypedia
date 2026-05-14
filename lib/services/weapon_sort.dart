@@ -6,6 +6,12 @@ import 'package:swrpg_quickypedia/models/weapon_sort.dart';
 /// just lacks the attribute doesn't clutter the top of the list. Ties
 /// on the primary key fall through to ascending case-insensitive name.
 int compareWeapons(Weapon a, Weapon b, WeaponSort sort) {
+  // Alphabetical promotes the existing name tiebreaker to the primary
+  // key and honors `ascending`; nothing else to compare on.
+  if (sort.attr == WeaponSortAttr.alphabetical) {
+    final c = _nameCmp(a, b);
+    return sort.ascending ? c : -c;
+  }
   final aVal = _valueFor(a, sort.attr);
   final bVal = _valueFor(b, sort.attr);
 
@@ -34,6 +40,9 @@ int? _valueFor(Weapon w, WeaponSortAttr attr) => switch (attr) {
       WeaponSortAttr.encumbrance => _parseInt(w.encumbrance),
       WeaponSortAttr.hardpoints => _parseInt(w.hardpoints),
       WeaponSortAttr.range => _rangeOrdinal(w.range),
+      // Handled above by short-circuit; this arm exists only so the
+      // exhaustive switch type-checks.
+      WeaponSortAttr.alphabetical => null,
     };
 
 /// Pulls the first integer out of strings like `"7"`, `"+2"`,

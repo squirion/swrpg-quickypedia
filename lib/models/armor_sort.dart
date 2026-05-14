@@ -8,6 +8,7 @@ enum ArmorSortAttr {
   defense,
   encumbrance,
   hardpoints,
+  alphabetical,
 }
 
 extension ArmorSortAttrLabel on ArmorSortAttr {
@@ -19,6 +20,7 @@ extension ArmorSortAttrLabel on ArmorSortAttr {
         ArmorSortAttr.defense => 'Defense',
         ArmorSortAttr.encumbrance => 'Encumbrance',
         ArmorSortAttr.hardpoints => 'Hard Points',
+        ArmorSortAttr.alphabetical => 'Alphabetical',
       };
 
   /// Short badge label used on tiles.
@@ -29,6 +31,7 @@ extension ArmorSortAttrLabel on ArmorSortAttr {
         ArmorSortAttr.defense => 'DEF',
         ArmorSortAttr.encumbrance => 'ENC',
         ArmorSortAttr.hardpoints => 'HP',
+        ArmorSortAttr.alphabetical => 'A→Z',
       };
 }
 

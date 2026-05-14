@@ -8,6 +8,7 @@ enum StarshipSortAttr {
   hullTrauma,
   encumbranceCapacity,
   passengerCapacity,
+  alphabetical,
 }
 
 extension StarshipSortAttrLabel on StarshipSortAttr {
@@ -21,6 +22,7 @@ extension StarshipSortAttrLabel on StarshipSortAttr {
         StarshipSortAttr.hullTrauma => 'Hull Trauma',
         StarshipSortAttr.encumbranceCapacity => 'Encum. Capacity',
         StarshipSortAttr.passengerCapacity => 'Passengers',
+        StarshipSortAttr.alphabetical => 'Alphabetical',
       };
 
   String get shortLabel => switch (this) {
@@ -33,6 +35,7 @@ extension StarshipSortAttrLabel on StarshipSortAttr {
         StarshipSortAttr.hullTrauma => 'HULL',
         StarshipSortAttr.encumbranceCapacity => 'ENCAP',
         StarshipSortAttr.passengerCapacity => 'PAX',
+        StarshipSortAttr.alphabetical => 'A→Z',
       };
 }
 

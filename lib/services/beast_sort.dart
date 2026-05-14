@@ -2,6 +2,10 @@ import 'package:swrpg_quickypedia/models/beast.dart';
 import 'package:swrpg_quickypedia/models/beast_sort.dart';
 
 int compareBeasts(Beast a, Beast b, BeastSort sort) {
+  if (sort.attr == BeastSortAttr.alphabetical) {
+    final c = _nameCmp(a, b);
+    return sort.ascending ? c : -c;
+  }
   final aVal = _valueFor(a, sort.attr);
   final bVal = _valueFor(b, sort.attr);
 
@@ -22,6 +26,7 @@ int? _valueFor(Beast b, BeastSortAttr attr) => switch (attr) {
       BeastSortAttr.price => _parseInt(b.price),
       BeastSortAttr.brawn => _parseInt(b.brawn),
       BeastSortAttr.woundThreshold => _parseInt(b.woundThreshold),
+      BeastSortAttr.alphabetical => null,
     };
 
 int? _parseInt(String? raw) {

@@ -4,6 +4,7 @@ enum GearSortAttr {
   rarity,
   price,
   encumbrance,
+  alphabetical,
 }
 
 extension GearSortAttrLabel on GearSortAttr {
@@ -11,12 +12,14 @@ extension GearSortAttrLabel on GearSortAttr {
         GearSortAttr.rarity => 'Rarity',
         GearSortAttr.price => 'Price',
         GearSortAttr.encumbrance => 'Encumbrance',
+        GearSortAttr.alphabetical => 'Alphabetical',
       };
 
   String get shortLabel => switch (this) {
         GearSortAttr.rarity => 'RAR',
         GearSortAttr.price => 'PRC',
         GearSortAttr.encumbrance => 'ENC',
+        GearSortAttr.alphabetical => 'A→Z',
       };
 }
 

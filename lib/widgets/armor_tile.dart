@@ -28,7 +28,10 @@ class ArmorTile extends ConsumerWidget {
     // value as a second badge in the bottom-left. Rarity also skips the
     // badge because the tile's colored outline already conveys it.
     final secondaryAttr = switch (sort.attr) {
-      ArmorSortAttr.price || ArmorSortAttr.rarity => null,
+      ArmorSortAttr.price ||
+      ArmorSortAttr.rarity ||
+      ArmorSortAttr.alphabetical =>
+        null,
       _ => sort.attr,
     };
     final secondaryValue = secondaryAttr == null
@@ -231,6 +234,7 @@ String? _displayValue(Armor a, ArmorSortAttr attr) => switch (attr) {
       ArmorSortAttr.defense => a.defense,
       ArmorSortAttr.encumbrance => a.encumbrance,
       ArmorSortAttr.hardpoints => a.hardpoints,
+      ArmorSortAttr.alphabetical => null,
     };
 
 int? _parseRarity(String? raw) {

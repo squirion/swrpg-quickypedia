@@ -24,7 +24,10 @@ class StarshipTile extends ConsumerWidget {
     final sort = ref.watch(starshipSortProvider);
 
     final secondaryAttr = switch (sort.attr) {
-      StarshipSortAttr.price || StarshipSortAttr.rarity => null,
+      StarshipSortAttr.price ||
+      StarshipSortAttr.rarity ||
+      StarshipSortAttr.alphabetical =>
+        null,
       _ => sort.attr,
     };
     final secondaryValue = secondaryAttr == null
@@ -230,6 +233,7 @@ String? _displayValue(Starship s, StarshipSortAttr attr) => switch (attr) {
       StarshipSortAttr.hullTrauma => s.hullTrauma,
       StarshipSortAttr.encumbranceCapacity => s.encumbranceCapacity,
       StarshipSortAttr.passengerCapacity => s.passengerCapacity,
+      StarshipSortAttr.alphabetical => null,
     };
 
 int? _parseRarity(String? raw) {

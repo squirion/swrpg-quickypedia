@@ -24,7 +24,10 @@ class VehicleTile extends ConsumerWidget {
     final sort = ref.watch(vehicleSortProvider);
 
     final secondaryAttr = switch (sort.attr) {
-      VehicleSortAttr.price || VehicleSortAttr.rarity => null,
+      VehicleSortAttr.price ||
+      VehicleSortAttr.rarity ||
+      VehicleSortAttr.alphabetical =>
+        null,
       _ => sort.attr,
     };
     final secondaryValue = secondaryAttr == null
@@ -230,6 +233,7 @@ String? _displayValue(Vehicle v, VehicleSortAttr attr) => switch (attr) {
       VehicleSortAttr.hullTrauma => v.hullTrauma,
       VehicleSortAttr.encumbranceCapacity => v.encumbranceCapacity,
       VehicleSortAttr.passengerCapacity => v.passengerCapacity,
+      VehicleSortAttr.alphabetical => null,
     };
 
 int? _parseRarity(String? raw) {

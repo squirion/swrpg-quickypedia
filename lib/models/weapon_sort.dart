@@ -10,6 +10,7 @@ enum WeaponSortAttr {
   damage,
   critical,
   hardpoints,
+  alphabetical,
 }
 
 extension WeaponSortAttrLabel on WeaponSortAttr {
@@ -22,9 +23,10 @@ extension WeaponSortAttrLabel on WeaponSortAttr {
         WeaponSortAttr.damage => 'Damage',
         WeaponSortAttr.critical => 'Critical',
         WeaponSortAttr.hardpoints => 'Hard Points',
+        WeaponSortAttr.alphabetical => 'Alphabetical',
       };
 
-  /// 3-letter badge label used on tiles.
+  /// Short label used on tile badges.
   String get shortLabel => switch (this) {
         WeaponSortAttr.rarity => 'RAR',
         WeaponSortAttr.price => 'PRC',
@@ -33,6 +35,7 @@ extension WeaponSortAttrLabel on WeaponSortAttr {
         WeaponSortAttr.damage => 'DMG',
         WeaponSortAttr.critical => 'CRT',
         WeaponSortAttr.hardpoints => 'HP',
+        WeaponSortAttr.alphabetical => 'A→Z',
       };
 }
 

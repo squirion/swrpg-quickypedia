@@ -28,7 +28,10 @@ class WeaponTile extends ConsumerWidget {
     // is justified. Rarity also skips the badge because the tile's
     // colored outline already conveys it.
     final secondaryAttr = switch (sort.attr) {
-      WeaponSortAttr.price || WeaponSortAttr.rarity => null,
+      WeaponSortAttr.price ||
+      WeaponSortAttr.rarity ||
+      WeaponSortAttr.alphabetical =>
+        null,
       _ => sort.attr,
     };
     final secondaryValue = secondaryAttr == null
@@ -248,6 +251,7 @@ String? _displayValue(Weapon w, WeaponSortAttr attr) => switch (attr) {
       WeaponSortAttr.damage => w.damage,
       WeaponSortAttr.critical => w.critical,
       WeaponSortAttr.hardpoints => w.hardpoints,
+      WeaponSortAttr.alphabetical => null,
     };
 
 /// Extract a numeric rarity from strings like `"6"`, `"(R) 6"`, `"6 (R)"`,

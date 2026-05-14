@@ -425,6 +425,120 @@ final characterDetailProvider =
   return apiClient.getCharacter(campaignId, characterId);
 });
 
+// --- Global UI state: search query + home system sort ---
+//
+// Both providers are shared across home, type, and grid tiers so that
+// state persists as the user navigates deeper. The search query is a
+// simple Notifier<String>; the home system sort is a Notifier whose
+// `select(attr)` method writes the equivalent attr to every per-
+// category sort provider so e.g. picking "Alphabetical" on home
+// re-sorts every system row immediately.
+
+final searchQueryProvider =
+    NotifierProvider<SearchQueryNotifier, String>(SearchQueryNotifier.new);
+
+class SearchQueryNotifier extends Notifier<String> {
+  @override
+  String build() => '';
+
+  void set(String value) => state = value;
+  void clear() => state = '';
+}
+
+/// Constrained sort menu exposed at the home System group. Maps to the
+/// shared attrs every per-category sort enum carries.
+enum HomeSystemSortAttr { rarity, price, alphabetical }
+
+extension HomeSystemSortAttrLabel on HomeSystemSortAttr {
+  String get label => switch (this) {
+        HomeSystemSortAttr.rarity => 'Rarity',
+        HomeSystemSortAttr.price => 'Price',
+        HomeSystemSortAttr.alphabetical => 'Alphabetical',
+      };
+}
+
+class HomeSystemSort {
+  final HomeSystemSortAttr attr;
+  final bool ascending;
+  const HomeSystemSort({required this.attr, required this.ascending});
+
+  static const HomeSystemSort defaultSort =
+      HomeSystemSort(attr: HomeSystemSortAttr.rarity, ascending: true);
+
+  HomeSystemSort copyWith({HomeSystemSortAttr? attr, bool? ascending}) =>
+      HomeSystemSort(
+        attr: attr ?? this.attr,
+        ascending: ascending ?? this.ascending,
+      );
+}
+
+final homeSystemSortProvider =
+    NotifierProvider<HomeSystemSortNotifier, HomeSystemSort>(
+  HomeSystemSortNotifier.new,
+);
+
+class HomeSystemSortNotifier extends Notifier<HomeSystemSort> {
+  @override
+  HomeSystemSort build() => HomeSystemSort.defaultSort;
+
+  /// Selecting the active attr toggles direction; selecting a different
+  /// attr keeps direction. Each change cascades into the 6 per-category
+  /// sort providers so the new value takes effect immediately at every
+  /// tier.
+  void select(HomeSystemSortAttr attr) {
+    state = state.attr == attr
+        ? state.copyWith(ascending: !state.ascending)
+        : state.copyWith(attr: attr);
+    _propagate();
+  }
+
+  void _propagate() {
+    final dir = state.ascending;
+    final weaponAttr = switch (state.attr) {
+      HomeSystemSortAttr.rarity => WeaponSortAttr.rarity,
+      HomeSystemSortAttr.price => WeaponSortAttr.price,
+      HomeSystemSortAttr.alphabetical => WeaponSortAttr.alphabetical,
+    };
+    final armorAttr = switch (state.attr) {
+      HomeSystemSortAttr.rarity => ArmorSortAttr.rarity,
+      HomeSystemSortAttr.price => ArmorSortAttr.price,
+      HomeSystemSortAttr.alphabetical => ArmorSortAttr.alphabetical,
+    };
+    final gearAttr = switch (state.attr) {
+      HomeSystemSortAttr.rarity => GearSortAttr.rarity,
+      HomeSystemSortAttr.price => GearSortAttr.price,
+      HomeSystemSortAttr.alphabetical => GearSortAttr.alphabetical,
+    };
+    final vehicleAttr = switch (state.attr) {
+      HomeSystemSortAttr.rarity => VehicleSortAttr.rarity,
+      HomeSystemSortAttr.price => VehicleSortAttr.price,
+      HomeSystemSortAttr.alphabetical => VehicleSortAttr.alphabetical,
+    };
+    final starshipAttr = switch (state.attr) {
+      HomeSystemSortAttr.rarity => StarshipSortAttr.rarity,
+      HomeSystemSortAttr.price => StarshipSortAttr.price,
+      HomeSystemSortAttr.alphabetical => StarshipSortAttr.alphabetical,
+    };
+    final beastAttr = switch (state.attr) {
+      HomeSystemSortAttr.rarity => BeastSortAttr.rarity,
+      HomeSystemSortAttr.price => BeastSortAttr.price,
+      HomeSystemSortAttr.alphabetical => BeastSortAttr.alphabetical,
+    };
+    ref.read(weaponSortProvider.notifier).state =
+        WeaponSort(attr: weaponAttr, ascending: dir);
+    ref.read(armorSortProvider.notifier).state =
+        ArmorSort(attr: armorAttr, ascending: dir);
+    ref.read(gearSortProvider.notifier).state =
+        GearSort(attr: gearAttr, ascending: dir);
+    ref.read(vehicleSortProvider.notifier).state =
+        VehicleSort(attr: vehicleAttr, ascending: dir);
+    ref.read(starshipSortProvider.notifier).state =
+        StarshipSort(attr: starshipAttr, ascending: dir);
+    ref.read(beastSortProvider.notifier).state =
+        BeastSort(attr: beastAttr, ascending: dir);
+  }
+}
+
 // --- System data: weapons ---
 //
 // System-dependent categories (weapons, armor, gear, vehicles, …) are

@@ -4,6 +4,10 @@ import 'package:swrpg_quickypedia/models/vehicle_sort.dart';
 /// Comparator for [Vehicle] under a given [VehicleSort]. Missing
 /// values sort to the end regardless of direction.
 int compareVehicles(Vehicle a, Vehicle b, VehicleSort sort) {
+  if (sort.attr == VehicleSortAttr.alphabetical) {
+    final c = _nameCmp(a, b);
+    return sort.ascending ? c : -c;
+  }
   final aVal = _valueFor(a, sort.attr);
   final bVal = _valueFor(b, sort.attr);
 
@@ -29,6 +33,7 @@ int? _valueFor(Vehicle v, VehicleSortAttr attr) => switch (attr) {
       VehicleSortAttr.hullTrauma => _parseInt(v.hullTrauma),
       VehicleSortAttr.encumbranceCapacity => _parseInt(v.encumbranceCapacity),
       VehicleSortAttr.passengerCapacity => _parseInt(v.passengerCapacity),
+      VehicleSortAttr.alphabetical => null,
     };
 
 int? _parseInt(String? raw) {

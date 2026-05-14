@@ -24,7 +24,10 @@ class BeastTile extends ConsumerWidget {
     final sort = ref.watch(beastSortProvider);
 
     final secondaryAttr = switch (sort.attr) {
-      BeastSortAttr.price || BeastSortAttr.rarity => null,
+      BeastSortAttr.price ||
+      BeastSortAttr.rarity ||
+      BeastSortAttr.alphabetical =>
+        null,
       _ => sort.attr,
     };
     final secondaryValue = secondaryAttr == null
@@ -225,6 +228,7 @@ String? _displayValue(Beast b, BeastSortAttr attr) => switch (attr) {
       BeastSortAttr.price => b.price,
       BeastSortAttr.brawn => b.brawn,
       BeastSortAttr.woundThreshold => b.woundThreshold,
+      BeastSortAttr.alphabetical => null,
     };
 
 int? _parseRarity(String? raw) {

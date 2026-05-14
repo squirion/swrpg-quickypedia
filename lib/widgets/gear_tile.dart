@@ -24,7 +24,10 @@ class GearTile extends ConsumerWidget {
     final sort = ref.watch(gearSortProvider);
 
     final secondaryAttr = switch (sort.attr) {
-      GearSortAttr.price || GearSortAttr.rarity => null,
+      GearSortAttr.price ||
+      GearSortAttr.rarity ||
+      GearSortAttr.alphabetical =>
+        null,
       _ => sort.attr,
     };
     final secondaryValue = secondaryAttr == null
@@ -224,6 +227,7 @@ String? _displayValue(Gear g, GearSortAttr attr) => switch (attr) {
       GearSortAttr.rarity => g.rarity,
       GearSortAttr.price => g.price,
       GearSortAttr.encumbrance => g.encumbrance,
+      GearSortAttr.alphabetical => null,
     };
 
 int? _parseRarity(String? raw) {

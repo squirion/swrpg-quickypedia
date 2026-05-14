@@ -4,6 +4,10 @@ import 'package:swrpg_quickypedia/models/gear_sort.dart';
 /// Comparator for [Gear] under a given [GearSort]. Same null-safety
 /// pattern as the weapon and armor comparators.
 int compareGear(Gear a, Gear b, GearSort sort) {
+  if (sort.attr == GearSortAttr.alphabetical) {
+    final c = _nameCmp(a, b);
+    return sort.ascending ? c : -c;
+  }
   final aVal = _valueFor(a, sort.attr);
   final bVal = _valueFor(b, sort.attr);
 
@@ -23,6 +27,7 @@ int? _valueFor(Gear g, GearSortAttr attr) => switch (attr) {
       GearSortAttr.rarity => _parseInt(g.rarity),
       GearSortAttr.price => _parseInt(g.price),
       GearSortAttr.encumbrance => _parseInt(g.encumbrance),
+      GearSortAttr.alphabetical => null,
     };
 
 int? _parseInt(String? raw) {

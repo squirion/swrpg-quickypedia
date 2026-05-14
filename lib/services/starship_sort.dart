@@ -2,6 +2,10 @@ import 'package:swrpg_quickypedia/models/starship.dart';
 import 'package:swrpg_quickypedia/models/starship_sort.dart';
 
 int compareStarships(Starship a, Starship b, StarshipSort sort) {
+  if (sort.attr == StarshipSortAttr.alphabetical) {
+    final c = _nameCmp(a, b);
+    return sort.ascending ? c : -c;
+  }
   final aVal = _valueFor(a, sort.attr);
   final bVal = _valueFor(b, sort.attr);
 
@@ -27,6 +31,7 @@ int? _valueFor(Starship s, StarshipSortAttr attr) => switch (attr) {
       StarshipSortAttr.hullTrauma => _parseInt(s.hullTrauma),
       StarshipSortAttr.encumbranceCapacity => _parseInt(s.encumbranceCapacity),
       StarshipSortAttr.passengerCapacity => _parseInt(s.passengerCapacity),
+      StarshipSortAttr.alphabetical => null,
     };
 
 int? _parseInt(String? raw) {

@@ -3,6 +3,7 @@ enum BeastSortAttr {
   price,
   brawn,
   woundThreshold,
+  alphabetical,
 }
 
 extension BeastSortAttrLabel on BeastSortAttr {
@@ -11,6 +12,7 @@ extension BeastSortAttrLabel on BeastSortAttr {
         BeastSortAttr.price => 'Price',
         BeastSortAttr.brawn => 'Brawn',
         BeastSortAttr.woundThreshold => 'Wound Threshold',
+        BeastSortAttr.alphabetical => 'Alphabetical',
       };
 
   String get shortLabel => switch (this) {
@@ -18,6 +20,7 @@ extension BeastSortAttrLabel on BeastSortAttr {
         BeastSortAttr.price => 'PRC',
         BeastSortAttr.brawn => 'BR',
         BeastSortAttr.woundThreshold => 'WND',
+        BeastSortAttr.alphabetical => 'A→Z',
       };
 }
 

@@ -6,6 +6,10 @@ import 'package:swrpg_quickypedia/models/armor_sort.dart';
 /// just lacks the attribute doesn't clutter the top of the list. Ties
 /// on the primary key fall through to ascending case-insensitive name.
 int compareArmors(Armor a, Armor b, ArmorSort sort) {
+  if (sort.attr == ArmorSortAttr.alphabetical) {
+    final c = _nameCmp(a, b);
+    return sort.ascending ? c : -c;
+  }
   final aVal = _valueFor(a, sort.attr);
   final bVal = _valueFor(b, sort.attr);
 
@@ -30,6 +34,9 @@ int? _valueFor(Armor w, ArmorSortAttr attr) => switch (attr) {
       ArmorSortAttr.defense => _parseInt(w.defense),
       ArmorSortAttr.encumbrance => _parseInt(w.encumbrance),
       ArmorSortAttr.hardpoints => _parseInt(w.hardpoints),
+      // Handled above by short-circuit; this arm exists only so the
+      // exhaustive switch type-checks.
+      ArmorSortAttr.alphabetical => null,
     };
 
 /// Pulls the first integer out of strings like `"2"`, `"1,500"`,

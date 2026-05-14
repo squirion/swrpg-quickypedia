@@ -403,6 +403,7 @@ class _CharactersRow extends ConsumerWidget {
           if (filtered.isEmpty) return const _NoMatchTile();
           return ListView.separated(
             scrollDirection: Axis.horizontal,
+            primary: true,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: filtered.length,
             separatorBuilder: (_, _) => const SizedBox(width: 12),
@@ -479,6 +480,7 @@ class _SystemRow<T> extends StatelessWidget {
           if (filtered.isEmpty) return const _NoMatchTile();
           return ListView.separated(
             scrollDirection: Axis.horizontal,
+            primary: true,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: filtered.length,
             separatorBuilder: (_, _) => const SizedBox(width: 12),

@@ -31,7 +31,7 @@ final List<WebDropSurface> _surfaces = <WebDropSurface>[];
 bool _installed = false;
 
 void registerWebDropSurface(WebDropSurface s) {
-  _ensureInstalled();
+  initWebDropIntercept();
   _surfaces.add(s);
 }
 
@@ -39,16 +39,20 @@ void unregisterWebDropSurface(WebDropSurface s) {
   _surfaces.remove(s);
 }
 
-void _ensureInstalled() {
+/// Call once at app startup (from `main.dart`). Installs a
+/// document-level capture-phase `drop` handler so `desktop_drop_web`'s
+/// broken `webkitGetAsEntry()!` handler can never run — its null-deref
+/// otherwise wedges the entire app the moment anything non-filesystem
+/// is dropped (including the synthetic drag a browser starts when you
+/// mouse over an `<img>` while dragging a scrollbar).
+void initWebDropIntercept() {
   if (_installed) return;
   _installed = true;
   // Capture phase fires before `window.ondrop` (which `desktop_drop`
-  // owns). `stopImmediatePropagation()` inside our handler then
-  // prevents the upstream broken code from running at all.
+  // owns). `stopImmediatePropagation()` inside our handler prevents
+  // the upstream broken code from running.
   web.document.addEventListener('drop', _onDrop.toJS, true.toJS);
   // `dragover` needs `preventDefault` for `drop` to fire at all.
-  // `desktop_drop` already handles this on `window.ondragover`, but
-  // it doesn't hurt to be defensive.
   web.document.addEventListener(
     'dragover',
     ((web.Event e) => e.preventDefault()).toJS,
@@ -58,6 +62,12 @@ void _ensureInstalled() {
 
 void _onDrop(web.Event raw) {
   final event = raw as web.DragEvent;
+  // Always swallow the drop in capture phase, regardless of whether
+  // there's a matching surface — otherwise `desktop_drop`'s window
+  // handler runs and crashes on any non-filesystem drop.
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
   if (_surfaces.isEmpty) return;
 
   final point = Offset(
@@ -73,11 +83,6 @@ void _onDrop(web.Event raw) {
     }
   }
   if (target == null) return;
-
-  // Take over the drop fully so `desktop_drop`'s broken handler
-  // doesn't run.
-  event.preventDefault();
-  event.stopImmediatePropagation();
 
   _dispatch(event, target);
 }

@@ -83,6 +83,7 @@ class GearTypeScreen extends ConsumerWidget {
               ? const _NoMatchTile()
               : ListView.separated(
                   scrollDirection: Axis.horizontal,
+                  primary: true,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: filtered.length,
                   separatorBuilder: (_, _) => const SizedBox(width: 12),

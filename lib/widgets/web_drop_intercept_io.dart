@@ -13,3 +13,8 @@ abstract class WebDropSurface {
 
 void registerWebDropSurface(WebDropSurface s) {}
 void unregisterWebDropSurface(WebDropSurface s) {}
+
+/// No-op on native. The web counterpart installs a document-level
+/// capture-phase drop handler at startup so `desktop_drop_web`'s
+/// broken null-deref handler never gets a chance to run.
+void initWebDropIntercept() {}

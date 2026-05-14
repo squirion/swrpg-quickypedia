@@ -5,10 +5,19 @@ import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/screens/login_screen.dart';
 import 'package:swrpg_quickypedia/screens/campaign_input_screen.dart';
 import 'package:swrpg_quickypedia/theme.dart';
+import 'package:swrpg_quickypedia/widgets/web_drop_intercept_io.dart'
+    if (dart.library.js_interop)
+        'package:swrpg_quickypedia/widgets/web_drop_intercept_web.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: '.env');
+  // Web only: install a capture-phase drop handler globally so the
+  // unconditional null-deref in `desktop_drop_web`'s `window.ondrop`
+  // never gets a chance to run. Without this, any stray browser drag
+  // (e.g. one triggered by mousing over an `<img>` while dragging the
+  // scrollbar thumb) crashes the app. No-op on native.
+  initWebDropIntercept();
   runApp(const ProviderScope(child: SwrpgQuickypediaApp()));
 }
 

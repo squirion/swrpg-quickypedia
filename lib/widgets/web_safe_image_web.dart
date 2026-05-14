@@ -20,10 +20,17 @@ void _ensureRegistered(String url, String fitCss) {
     (int viewId, {Object? params}) {
       final img = web.HTMLImageElement()
         ..src = url
+        ..draggable = false
         ..style.objectFit = fitCss
         ..style.width = '100%'
         ..style.height = '100%'
-        ..style.display = 'block';
+        ..style.display = 'block'
+        // Belt and suspenders: even with `draggable=false` set, some
+        // browsers will still initiate a drag when the cursor passes
+        // over an image during a scrollbar interaction. `user-select:
+        // none` + `-webkit-user-drag: none` also suppress that.
+        ..style.userSelect = 'none'
+        ..style.setProperty('-webkit-user-drag', 'none');
       return img;
     },
   );

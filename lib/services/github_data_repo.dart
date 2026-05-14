@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 class GithubDataException implements Exception {
@@ -77,16 +78,52 @@ class GithubDataRepo {
     }
   }
 
-  /// Fetch a file's bytes from `raw.githubusercontent.com`. Returns
-  /// `null` for 404 so callers can treat "not yet uploaded" as a
-  /// non-error state.
+  /// Fetch a file's bytes. On native we hit `raw.githubusercontent.com`
+  /// with the PAT in the `Authorization` header. On web that path is
+  /// blocked because the browser's CORS preflight fails (raw GitHub
+  /// doesn't accept the `Authorization` header on an OPTIONS request),
+  /// so we route through the Contents API, which supports CORS. For
+  /// files ≤1 MB the API returns the content inline (base64); for
+  /// larger files it returns a `download_url` whose embedded token
+  /// lets us fetch the raw bytes without any custom headers (no
+  /// preflight). Returns `null` for 404.
   Future<Uint8List?> readRaw(String path) async {
+    if (kIsWeb) return _readViaContentsApi(path);
     final resp = await _client.get(rawUri(path), headers: rawAuthHeaders);
     if (resp.statusCode == 404) return null;
     if (resp.statusCode != 200) {
       throw GithubDataException(resp.statusCode, _apiError(resp));
     }
     return resp.bodyBytes;
+  }
+
+  Future<Uint8List?> _readViaContentsApi(String path) async {
+    final resp = await _client.get(_contentsUri(path), headers: _authHeaders);
+    if (resp.statusCode == 404) return null;
+    if (resp.statusCode != 200) {
+      throw GithubDataException(resp.statusCode, _apiError(resp));
+    }
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    final content = body['content'] as String?;
+    final encoding = body['encoding'] as String?;
+    if (encoding == 'base64' && content != null && content.isNotEmpty) {
+      return Uint8List.fromList(base64.decode(content.replaceAll('\n', '')));
+    }
+    // >1 MB: Contents API returns empty content + a tokenised
+    // download_url. That URL is a simple GET (no auth header → no
+    // CORS preflight) so the browser will fetch it cleanly.
+    final downloadUrl = body['download_url'] as String?;
+    if (downloadUrl == null) {
+      throw GithubDataException(
+        500,
+        'Contents API returned no content and no download_url for $path',
+      );
+    }
+    final raw = await _client.get(Uri.parse(downloadUrl));
+    if (raw.statusCode != 200) {
+      throw GithubDataException(raw.statusCode, raw.reasonPhrase ?? '');
+    }
+    return raw.bodyBytes;
   }
 
   /// Returns the file's current SHA + decoded bytes via the Contents

@@ -1,5 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:swrpg_quickypedia/widgets/github_repo_image.dart';
+import 'package:swrpg_quickypedia/widgets/web_safe_image.dart';
 
 /// Pinch-to-zoom full-screen viewer for any image URL. Designed to be
 /// shared by every detail screen in the app (weapons, characters, …)
@@ -41,17 +44,43 @@ class FullscreenImageViewer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget image = CachedNetworkImage(
-      imageUrl: imageUrl,
-      httpHeaders: httpHeaders,
-      fit: BoxFit.contain,
-      placeholder: (_, _) => const Center(
-        child: CircularProgressIndicator(color: Colors.white70),
-      ),
-      errorWidget: (_, _, _) => const Center(
-        child: Icon(Icons.broken_image, color: Colors.white24, size: 56),
-      ),
+    // Web has two CORS shapes here: (a) images on our private GitHub
+    // data repo need the PAT — `<img>` can't carry it, so fetch
+    // authed bytes via Contents API and render with `Image.memory`;
+    // (b) cross-origin avatars from hosts like the Obsidian Portal
+    // CDN need no auth but block XHR — render through an `<img>`
+    // element instead. `httpHeaders != null` is the existing signal
+    // that the caller passed GitHub auth (set by `_Hero` callsites
+    // via `githubAuthHeadersFor`).
+    final errorView = const Center(
+      child: Icon(Icons.broken_image, color: Colors.white24, size: 56),
     );
+    final loadingView = const Center(
+      child: CircularProgressIndicator(color: Colors.white70),
+    );
+    Widget image;
+    if (kIsWeb && httpHeaders != null) {
+      image = GithubRepoImage(
+        url: imageUrl,
+        fit: BoxFit.contain,
+        placeholder: loadingView,
+        errorPlaceholder: errorView,
+      );
+    } else if (kIsWeb) {
+      image = webSafeImage(
+        url: imageUrl,
+        fit: BoxFit.contain,
+        errorPlaceholder: errorView,
+      );
+    } else {
+      image = CachedNetworkImage(
+        imageUrl: imageUrl,
+        httpHeaders: httpHeaders,
+        fit: BoxFit.contain,
+        placeholder: (_, _) => loadingView,
+        errorWidget: (_, _, _) => errorView,
+      );
+    }
     if (heroTag != null) {
       image = Hero(tag: heroTag!, child: image);
     }

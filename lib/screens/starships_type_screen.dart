@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/models/starship.dart';
@@ -27,11 +28,12 @@ class StarshipsTypeScreen extends ConsumerWidget {
         actions: [
           const DownloadFromCloudButton(),
           const StarshipSortMenu(),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Fetch from wiki',
-            onPressed: running ? null : () => _runScrape(context, ref),
-          ),
+          if (!kIsWeb)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Fetch from wiki',
+              onPressed: running ? null : () => _runScrape(context, ref),
+            ),
         ],
         bottom: _StarshipsScrapeBanner(state: scrape),
       ),
@@ -130,13 +132,15 @@ class StarshipsTypeScreen extends ConsumerWidget {
                   .bodyMedium
                   ?.copyWith(color: Colors.grey.shade700),
             ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.travel_explore),
-              label: const Text('Fetch from wiki'),
-              onPressed:
-                  running ? null : () => _runScrape(context, ref),
-            ),
+            if (!kIsWeb) ...[
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.travel_explore),
+                label: const Text('Fetch from wiki'),
+                onPressed:
+                    running ? null : () => _runScrape(context, ref),
+              ),
+            ],
             if (scrape is ScrapeError) ...[
               const SizedBox(height: 12),
               Text(scrape.message,

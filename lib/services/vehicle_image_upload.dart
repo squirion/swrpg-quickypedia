@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
-import 'package:image/image.dart' as img;
 import 'package:swrpg_quickypedia/models/vehicle.dart';
 import 'package:swrpg_quickypedia/services/github_data_repo.dart';
+import 'package:swrpg_quickypedia/services/image_resize.dart';
 import 'package:swrpg_quickypedia/services/system_data_store.dart';
 
 class VehicleImageUploader {
@@ -31,30 +31,11 @@ class VehicleImageUploader {
     return resp.bodyBytes;
   }
 
-  Uint8List _resizeToPng(Uint8List bytes) {
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) {
-      throw Exception('Could not decode the supplied image bytes.');
-    }
-    final w = decoded.width;
-    final h = decoded.height;
-    final longest = w >= h ? w : h;
-    final shrunk = longest <= _maxEdgePx
-        ? decoded
-        : img.copyResize(
-            decoded,
-            width: w >= h ? _maxEdgePx : null,
-            height: h > w ? _maxEdgePx : null,
-            interpolation: img.Interpolation.cubic,
-          );
-    return Uint8List.fromList(img.encodePng(shrunk));
-  }
-
   Future<String> upload({
     required Vehicle vehicle,
     required Uint8List bytes,
   }) async {
-    final png = _resizeToPng(bytes);
+    final png = await resizeToPng(bytes, _maxEdgePx);
     final slug = slugFor(vehicle.name);
     final path = '$_imagesDir/$slug.png';
 

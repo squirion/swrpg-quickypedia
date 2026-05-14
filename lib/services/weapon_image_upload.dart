@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
-import 'package:image/image.dart' as img;
 import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/services/github_data_repo.dart';
+import 'package:swrpg_quickypedia/services/image_resize.dart';
 import 'package:swrpg_quickypedia/services/system_data_store.dart';
 
 /// One image upload + the follow-up `weapons.json` patch, packaged as
@@ -40,35 +40,16 @@ class WeaponImageUploader {
     return resp.bodyBytes;
   }
 
-  /// Re-encode to PNG, capped at [_maxEdgePx] on the longest side so
-  /// the repo doesn't accumulate multi-MB blobs. PNG keeps any
-  /// transparency the source had.
-  Uint8List _resizeToPng(Uint8List bytes) {
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) {
-      throw Exception('Could not decode the supplied image bytes.');
-    }
-    final w = decoded.width;
-    final h = decoded.height;
-    final longest = w >= h ? w : h;
-    final shrunk = longest <= _maxEdgePx
-        ? decoded
-        : img.copyResize(
-            decoded,
-            width: w >= h ? _maxEdgePx : null,
-            height: h > w ? _maxEdgePx : null,
-            interpolation: img.Interpolation.cubic,
-          );
-    return Uint8List.fromList(img.encodePng(shrunk));
-  }
-
   /// Upload the image and update the weapons database in one go.
-  /// Returns the URL written into `weapon.imageUrl`.
+  /// Returns the URL written into `weapon.imageUrl`. [resizeToPng]
+  /// uses the `image` package on native and a browser `<canvas>` on
+  /// web — async-only so dart2js doesn't freeze the main thread on
+  /// multi-MB inputs.
   Future<String> upload({
     required Weapon weapon,
     required Uint8List bytes,
   }) async {
-    final png = _resizeToPng(bytes);
+    final png = await resizeToPng(bytes, _maxEdgePx);
     final slug = slugFor(weapon.name);
     final path = '$_imagesDir/$slug.png';
 

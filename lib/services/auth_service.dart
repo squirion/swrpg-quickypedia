@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:oauth1/oauth1.dart' as oauth1;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -82,7 +83,15 @@ class AuthService {
   Future<void> launchAuthorizationUrl(String url) async {
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      // On web the browser *is* the external app, so
+      // `LaunchMode.externalApplication` just logs a warning. Use
+      // `platformDefault` (opens in a new tab) instead.
+      await launchUrl(
+        uri,
+        mode: kIsWeb
+            ? LaunchMode.platformDefault
+            : LaunchMode.externalApplication,
+      );
     } else {
       throw Exception('Could not launch $url');
     }

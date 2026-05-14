@@ -1,9 +1,11 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/models/weapon.dart';
 import 'package:swrpg_quickypedia/models/weapon_sort.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
+import 'package:swrpg_quickypedia/widgets/github_repo_image.dart';
 
 class WeaponTile extends ConsumerWidget {
   final Weapon weapon;
@@ -126,6 +128,14 @@ class _Background extends StatelessWidget {
     );
     final url = imageUrl;
     if (url == null || url.isEmpty) return fallback;
+    if (kIsWeb && authHeaders != null) {
+      return GithubRepoImage(
+        url: url,
+        fit: BoxFit.cover,
+        placeholder: Container(color: const Color(0xFF111827)),
+        errorPlaceholder: fallback,
+      );
+    }
     return CachedNetworkImage(
       imageUrl: url,
       httpHeaders: authHeaders,

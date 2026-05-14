@@ -1,7 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/models/beast.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
@@ -9,6 +8,9 @@ import 'package:swrpg_quickypedia/services/beast_image_upload.dart';
 import 'package:swrpg_quickypedia/theme.dart';
 import 'package:swrpg_quickypedia/widgets/beast_placeholder.dart';
 import 'package:swrpg_quickypedia/widgets/fullscreen_image_viewer.dart';
+import 'package:swrpg_quickypedia/widgets/github_repo_image.dart';
+import 'package:swrpg_quickypedia/widgets/image_upload_surface.dart';
+import 'package:swrpg_quickypedia/widgets/item_detail_layout.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Detail screen for a single beast. Creatures get a bespoke layout
@@ -50,18 +52,20 @@ class BeastViewScreen extends ConsumerWidget {
     var sectionNumber = 0;
     String nextNum() => (++sectionNumber).toString().padLeft(2, '0');
 
+    // Build the first-section heading first so the section counter
+    // increments in render order (the inner `restSections` builder
+    // runs next).
+    final firstHeading =
+        _SectionHeading(number: nextNum(), title: 'Characteristics');
+
     return Scaffold(
       appBar: AppBar(title: Text(live.name)),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 48),
-        children: [
-          _Crumbs(name: live.name, category: live.category),
-          const SizedBox(height: 16),
-          _Hero(beast: live),
-          const SizedBox(height: 20),
-          _SectionHeading(number: nextNum(), title: 'Characteristics'),
-          const SizedBox(height: 14),
-          _CharacteristicsRow(beast: live),
+      body: ItemDetailLayout(
+        crumbs: _Crumbs(name: live.name, category: live.category),
+        hero: _Hero(beast: live),
+        firstSectionHeading: firstHeading,
+        firstSectionBody: _CharacteristicsRow(beast: live),
+        restSections: [
           const SizedBox(height: 22),
           _SectionHeading(number: nextNum(), title: 'Combat Stats'),
           const SizedBox(height: 14),
@@ -214,14 +218,23 @@ class _Hero extends ConsumerWidget {
               else
                 Hero(
                   tag: beast.imageUrl!,
-                  child: CachedNetworkImage(
-                    imageUrl: beast.imageUrl!,
-                    httpHeaders: authHeaders,
-                    fit: BoxFit.contain,
-                    placeholder: (_, _) =>
-                        const ColoredBox(color: AppColors.bg2),
-                    errorWidget: (_, _, _) => const BeastPlaceholder(),
-                  ),
+                  child: kIsWeb && authHeaders != null
+                      ? GithubRepoImage(
+                          url: beast.imageUrl!,
+                          fit: BoxFit.contain,
+                          placeholder:
+                              const ColoredBox(color: AppColors.bg2),
+                          errorPlaceholder: const BeastPlaceholder(),
+                        )
+                      : CachedNetworkImage(
+                          imageUrl: beast.imageUrl!,
+                          httpHeaders: authHeaders,
+                          fit: BoxFit.contain,
+                          placeholder: (_, _) =>
+                              const ColoredBox(color: AppColors.bg2),
+                          errorWidget: (_, _, _) =>
+                              const BeastPlaceholder(),
+                        ),
                 ),
               const DecoratedBox(
                 decoration: BoxDecoration(
@@ -257,16 +270,56 @@ class _Hero extends ConsumerWidget {
       ),
     );
 
-    if (!hasImage) return panel;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => FullscreenImageViewer.open(
+    final tappable = !hasImage
+        ? panel
+        : GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => FullscreenImageViewer.open(
+              context,
+              imageUrl: beast.imageUrl!,
+              httpHeaders: authHeaders,
+              heroTag: beast.imageUrl!,
+            ),
+            child: panel,
+          );
+
+    return ImageUploadSurface(
+      onBytes: (bytes) => _runBeastUpload(
         context,
-        imageUrl: beast.imageUrl!,
-        httpHeaders: authHeaders,
-        heroTag: beast.imageUrl!,
+        ref,
+        (u) => u.upload(beast: beast, bytes: bytes),
       ),
-      child: panel,
+      onUrl: (url) => _runBeastUpload(
+        context,
+        ref,
+        (u) => u.uploadFromUrl(beast: beast, url: url),
+      ),
+      child: tappable,
+    );
+  }
+}
+
+Future<void> _runBeastUpload(
+  BuildContext context,
+  WidgetRef ref,
+  Future<String> Function(BeastImageUploader uploader) action,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.showSnackBar(
+    const SnackBar(content: Text('Uploading image…')),
+  );
+  try {
+    final uploader = ref.read(beastImageUploaderProvider);
+    await action(uploader);
+    ref.invalidate(beastsProvider);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Image uploaded.')),
+    );
+  } catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Upload failed: $e')),
     );
   }
 }
@@ -284,140 +337,25 @@ class _EditImageButton extends ConsumerWidget {
       ),
       child: InkWell(
         customBorder: const CircleBorder(),
-        onTap: () => _openSheet(context, ref),
+        onTap: () => ImageUploadSurface.showUploadSheet(
+          context,
+          onBytes: (bytes) => _runBeastUpload(
+            context,
+            ref,
+            (u) => u.upload(beast: beast, bytes: bytes),
+          ),
+          onUrl: (url) => _runBeastUpload(
+            context,
+            ref,
+            (u) => u.uploadFromUrl(beast: beast, url: url),
+          ),
+        ),
         child: const Padding(
           padding: EdgeInsets.all(6),
           child: Icon(Icons.edit, size: 16, color: AppColors.accent),
         ),
       ),
     );
-  }
-
-  Future<void> _openSheet(BuildContext context, WidgetRef ref) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.panel,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: Text(
-                'Add image',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.ink,
-                ),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Pick from device'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _uploadFromFile(context, ref);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.link),
-              title: const Text('From URL'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _uploadFromUrl(context, ref);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _uploadFromFile(BuildContext context, WidgetRef ref) async {
-    final picked = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
-    );
-    if (picked == null || picked.files.isEmpty) return;
-    final bytes = picked.files.single.bytes;
-    if (bytes == null) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not read the selected file.')),
-      );
-      return;
-    }
-    if (!context.mounted) return;
-    await _runUpload(context, ref, (uploader) async {
-      return uploader.upload(beast: beast, bytes: bytes);
-    });
-  }
-
-  Future<void> _uploadFromUrl(BuildContext context, WidgetRef ref) async {
-    final controller = TextEditingController();
-    final url = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Image URL'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'https://…'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final clip = await Clipboard.getData('text/plain');
-              if (clip?.text != null) controller.text = clip!.text!;
-            },
-            child: const Text('Paste'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Fetch'),
-          ),
-        ],
-      ),
-    );
-    if (url == null || url.isEmpty) return;
-    if (!context.mounted) return;
-    await _runUpload(context, ref, (uploader) async {
-      return uploader.uploadFromUrl(beast: beast, url: url);
-    });
-  }
-
-  Future<void> _runUpload(
-    BuildContext context,
-    WidgetRef ref,
-    Future<String> Function(BeastImageUploader uploader) action,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Uploading image…')),
-    );
-    try {
-      final uploader = ref.read(beastImageUploaderProvider);
-      await action(uploader);
-      ref.invalidate(beastsProvider);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image uploaded.')),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
-      );
-    }
   }
 }
 
@@ -547,14 +485,18 @@ class _SectionHeading extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Text(
-          title.toUpperCase(),
-          style: AppFonts.display(
-            const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 3.0,
-              color: AppColors.inkDim,
+        Flexible(
+          child: Text(
+            title.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppFonts.display(
+              const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 3.0,
+                color: AppColors.inkDim,
+              ),
             ),
           ),
         ),

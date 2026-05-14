@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -6,6 +7,8 @@ import 'package:swrpg_quickypedia/models/character.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/utils/html_utils.dart';
 import 'package:swrpg_quickypedia/widgets/fullscreen_image_viewer.dart';
+import 'package:swrpg_quickypedia/widgets/web_body_frame.dart';
+import 'package:swrpg_quickypedia/widgets/web_safe_image.dart';
 
 class CharacterBioScreen extends ConsumerWidget {
   final Character character;
@@ -31,51 +34,53 @@ class CharacterBioScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(c.name)),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(characterDetailProvider(character.id));
-          await ref.read(characterDetailProvider(character.id).future);
-        },
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.zero,
-          children: [
-            _HeroImage(url: c.avatarUrl),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: _Header(character: c),
-            ),
-            if (detailError != null)
+      body: WebBodyFrame(
+        child: RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(characterDetailProvider(character.id));
+            await ref.read(characterDetailProvider(character.id).future);
+          },
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            children: [
+              _HeroImage(url: c.avatarUrl),
               Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: _ErrorBanner(error: detailError),
+                padding: const EdgeInsets.all(16),
+                child: _Header(character: c),
               ),
-            _BioSection(
-              content: c.content,
-              isLoading: isLoadingDetail && c.content == null,
-            ),
-            _DetailsCard(character: c),
-            if (c.characterUrl != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                child: TextButton.icon(
-                  icon: const Icon(Icons.open_in_new),
-                  label: const Text('View on Obsidian Portal'),
-                  onPressed: () async {
-                    final uri = Uri.parse(c.characterUrl!);
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(
-                        uri,
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
-                  },
+              if (detailError != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: _ErrorBanner(error: detailError),
                 ),
+              _BioSection(
+                content: c.content,
+                isLoading: isLoadingDetail && c.content == null,
               ),
-          ],
+              _DetailsCard(character: c),
+              if (c.characterUrl != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('View on Obsidian Portal'),
+                    onPressed: () async {
+                      final uri = Uri.parse(c.characterUrl!);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(
+                          uri,
+                          mode: LaunchMode.externalApplication,
+                        );
+                      }
+                    },
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -114,16 +119,28 @@ class _HeroImage extends StatelessWidget {
         constraints: BoxConstraints(maxHeight: screen.height * 0.6),
         child: Hero(
           tag: imageUrl,
-          child: CachedNetworkImage(
-            imageUrl: imageUrl,
-            width: double.infinity,
-            fit: BoxFit.contain,
-            placeholder: (_, _) => Container(
-              height: 240,
-              color: Colors.grey.shade200,
-            ),
-            errorWidget: (_, _, _) => fallback,
-          ),
+          // CanvasKit's `Image.network` (and `CachedNetworkImage`)
+          // fetch via XHR and are blocked by CORS for the Obsidian
+          // Portal CDN. On web we drop in an `<img>` element via
+          // `HtmlElementView`, which displays cross-origin images
+          // without a CORS check.
+          child: kIsWeb
+              ? webSafeImage(
+                  url: imageUrl,
+                  fit: BoxFit.contain,
+                  width: double.infinity,
+                  errorPlaceholder: fallback,
+                )
+              : CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  width: double.infinity,
+                  fit: BoxFit.contain,
+                  placeholder: (_, _) => Container(
+                    height: 240,
+                    color: Colors.grey.shade200,
+                  ),
+                  errorWidget: (_, _, _) => fallback,
+                ),
         ),
       ),
     );

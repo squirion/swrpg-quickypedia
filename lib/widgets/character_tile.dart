@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:swrpg_quickypedia/models/character.dart';
+import 'package:swrpg_quickypedia/widgets/web_safe_image.dart';
 
 class CharacterTile extends StatelessWidget {
   final Character character;
@@ -89,6 +91,18 @@ class _Avatar extends StatelessWidget {
       child: Icon(Icons.person, size: 40, color: Colors.grey.shade100),
     );
     if (url == null || url!.isEmpty) return fallback;
+    // CanvasKit's `Image.network` (and `CachedNetworkImage`) fetch
+    // images via XHR, which is blocked by CORS for the Obsidian
+    // Portal CDN. Route through `<img>` via `HtmlElementView` on
+    // web — the browser displays cross-origin images natively
+    // without ever exposing pixels to JS, so no CORS check.
+    if (kIsWeb) {
+      return webSafeImage(
+        url: url!,
+        fit: BoxFit.cover,
+        errorPlaceholder: fallback,
+      );
+    }
     return CachedNetworkImage(
       imageUrl: url!,
       fit: BoxFit.cover,

@@ -1,7 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/models/item_quality.dart';
 import 'package:swrpg_quickypedia/models/vehicle.dart';
@@ -10,6 +9,9 @@ import 'package:swrpg_quickypedia/services/vehicle_image_upload.dart';
 import 'package:swrpg_quickypedia/theme.dart';
 import 'package:swrpg_quickypedia/widgets/defense_diamond.dart';
 import 'package:swrpg_quickypedia/widgets/fullscreen_image_viewer.dart';
+import 'package:swrpg_quickypedia/widgets/github_repo_image.dart';
+import 'package:swrpg_quickypedia/widgets/image_upload_surface.dart';
+import 'package:swrpg_quickypedia/widgets/item_detail_layout.dart';
 import 'package:swrpg_quickypedia/widgets/vehicle_placeholder.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -46,20 +48,22 @@ class VehicleViewScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(live.name)),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 48),
-        children: [
-          _Crumbs(name: live.name, category: live.category),
-          const SizedBox(height: 16),
-          _Hero(vehicle: live),
-          const SizedBox(height: 20),
-          const _SectionHeading(number: '01', title: 'Specifications'),
-          const SizedBox(height: 14),
-          _StatBlock(vehicle: live),
-          if (hasWeapons) ...[
-            const SizedBox(height: 18),
-            _ArmamentsPanel(text: live.weapons!),
+      body: ItemDetailLayout(
+        crumbs: _Crumbs(name: live.name, category: live.category),
+        hero: _Hero(vehicle: live),
+        firstSectionHeading:
+            const _SectionHeading(number: '01', title: 'Specifications'),
+        firstSectionBody: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _StatBlock(vehicle: live),
+            if (hasWeapons) ...[
+              const SizedBox(height: 18),
+              _ArmamentsPanel(text: live.weapons!),
+            ],
           ],
+        ),
+        restSections: [
           if (showMechanicsSection) ...[
             const SizedBox(height: 28),
             const _SectionHeading(number: '02', title: 'Game Mechanics'),
@@ -189,14 +193,23 @@ class _Hero extends ConsumerWidget {
               else
                 Hero(
                   tag: vehicle.imageUrl!,
-                  child: CachedNetworkImage(
-                    imageUrl: vehicle.imageUrl!,
-                    httpHeaders: authHeaders,
-                    fit: BoxFit.contain,
-                    placeholder: (_, _) =>
-                        const ColoredBox(color: AppColors.bg2),
-                    errorWidget: (_, _, _) => const VehiclePlaceholder(),
-                  ),
+                  child: kIsWeb && authHeaders != null
+                      ? GithubRepoImage(
+                          url: vehicle.imageUrl!,
+                          fit: BoxFit.contain,
+                          placeholder:
+                              const ColoredBox(color: AppColors.bg2),
+                          errorPlaceholder: const VehiclePlaceholder(),
+                        )
+                      : CachedNetworkImage(
+                          imageUrl: vehicle.imageUrl!,
+                          httpHeaders: authHeaders,
+                          fit: BoxFit.contain,
+                          placeholder: (_, _) =>
+                              const ColoredBox(color: AppColors.bg2),
+                          errorWidget: (_, _, _) =>
+                              const VehiclePlaceholder(),
+                        ),
                 ),
               const DecoratedBox(
                 decoration: BoxDecoration(
@@ -232,16 +245,56 @@ class _Hero extends ConsumerWidget {
       ),
     );
 
-    if (!hasImage) return panel;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => FullscreenImageViewer.open(
+    final tappable = !hasImage
+        ? panel
+        : GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => FullscreenImageViewer.open(
+              context,
+              imageUrl: vehicle.imageUrl!,
+              httpHeaders: authHeaders,
+              heroTag: vehicle.imageUrl!,
+            ),
+            child: panel,
+          );
+
+    return ImageUploadSurface(
+      onBytes: (bytes) => _runVehicleUpload(
         context,
-        imageUrl: vehicle.imageUrl!,
-        httpHeaders: authHeaders,
-        heroTag: vehicle.imageUrl!,
+        ref,
+        (u) => u.upload(vehicle: vehicle, bytes: bytes),
       ),
-      child: panel,
+      onUrl: (url) => _runVehicleUpload(
+        context,
+        ref,
+        (u) => u.uploadFromUrl(vehicle: vehicle, url: url),
+      ),
+      child: tappable,
+    );
+  }
+}
+
+Future<void> _runVehicleUpload(
+  BuildContext context,
+  WidgetRef ref,
+  Future<String> Function(VehicleImageUploader uploader) action,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.showSnackBar(
+    const SnackBar(content: Text('Uploading image…')),
+  );
+  try {
+    final uploader = ref.read(vehicleImageUploaderProvider);
+    await action(uploader);
+    ref.invalidate(vehiclesProvider);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Image uploaded.')),
+    );
+  } catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Upload failed: $e')),
     );
   }
 }
@@ -259,140 +312,25 @@ class _EditImageButton extends ConsumerWidget {
       ),
       child: InkWell(
         customBorder: const CircleBorder(),
-        onTap: () => _openSheet(context, ref),
+        onTap: () => ImageUploadSurface.showUploadSheet(
+          context,
+          onBytes: (bytes) => _runVehicleUpload(
+            context,
+            ref,
+            (u) => u.upload(vehicle: vehicle, bytes: bytes),
+          ),
+          onUrl: (url) => _runVehicleUpload(
+            context,
+            ref,
+            (u) => u.uploadFromUrl(vehicle: vehicle, url: url),
+          ),
+        ),
         child: const Padding(
           padding: EdgeInsets.all(6),
           child: Icon(Icons.edit, size: 16, color: AppColors.accent),
         ),
       ),
     );
-  }
-
-  Future<void> _openSheet(BuildContext context, WidgetRef ref) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.panel,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: Text(
-                'Add image',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.ink,
-                ),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Pick from device'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _uploadFromFile(context, ref);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.link),
-              title: const Text('From URL'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _uploadFromUrl(context, ref);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _uploadFromFile(BuildContext context, WidgetRef ref) async {
-    final picked = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
-    );
-    if (picked == null || picked.files.isEmpty) return;
-    final bytes = picked.files.single.bytes;
-    if (bytes == null) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not read the selected file.')),
-      );
-      return;
-    }
-    if (!context.mounted) return;
-    await _runUpload(context, ref, (uploader) async {
-      return uploader.upload(vehicle: vehicle, bytes: bytes);
-    });
-  }
-
-  Future<void> _uploadFromUrl(BuildContext context, WidgetRef ref) async {
-    final controller = TextEditingController();
-    final url = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Image URL'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'https://…'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final clip = await Clipboard.getData('text/plain');
-              if (clip?.text != null) controller.text = clip!.text!;
-            },
-            child: const Text('Paste'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Fetch'),
-          ),
-        ],
-      ),
-    );
-    if (url == null || url.isEmpty) return;
-    if (!context.mounted) return;
-    await _runUpload(context, ref, (uploader) async {
-      return uploader.uploadFromUrl(vehicle: vehicle, url: url);
-    });
-  }
-
-  Future<void> _runUpload(
-    BuildContext context,
-    WidgetRef ref,
-    Future<String> Function(VehicleImageUploader uploader) action,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Uploading image…')),
-    );
-    try {
-      final uploader = ref.read(vehicleImageUploaderProvider);
-      await action(uploader);
-      ref.invalidate(vehiclesProvider);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image uploaded.')),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
-      );
-    }
   }
 }
 
@@ -517,14 +455,18 @@ class _SectionHeading extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Text(
-          title.toUpperCase(),
-          style: AppFonts.display(
-            const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 3.0,
-              color: AppColors.inkDim,
+        Flexible(
+          child: Text(
+            title.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppFonts.display(
+              const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 3.0,
+                color: AppColors.inkDim,
+              ),
             ),
           ),
         ),

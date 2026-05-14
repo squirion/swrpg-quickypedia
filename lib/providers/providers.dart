@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -144,6 +146,15 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 
 /// Configured from `.env`. The PAT is fine-grained and scoped to
 /// just the swrpg-quickypedia-data repo with Contents: Read and write.
+///
+/// TODO(web-security): when this app ships to the web, `.env` ends up
+/// bundled as a static asset and `GH_DATA_PAT` is readable in the
+/// served `main.dart.js`. Anyone visiting the site can extract the
+/// token and push to the data repo. The right fix is a server-side
+/// proxy (e.g. a Cloudflare Worker / Cloud Run service) that holds
+/// the PAT and re-signs GitHub requests; on web the app would call
+/// that proxy instead of touching GitHub directly. Punted for the
+/// first web release since there are no public web users yet.
 final githubDataRepoProvider = Provider<GithubDataRepo>((ref) {
   final repo = GithubDataRepo(
     owner: dotenv.env['GH_DATA_OWNER'] ?? '',
@@ -210,6 +221,28 @@ Map<String, String>? githubAuthHeadersFor(String url, WidgetRef ref) {
   if (!url.startsWith('https://raw.githubusercontent.com/')) return null;
   return ref.read(githubDataRepoProvider).rawAuthHeaders;
 }
+
+/// Fetches the bytes for an image URL that points at the
+/// `raw.githubusercontent.com` private data repo. On native, `<img>`-
+/// style fetches can carry the `Authorization` header so the URL just
+/// works; on web they can't, the request goes unauthenticated and the
+/// private repo answers 404. This provider routes through the
+/// Contents API (where `Authorization` survives CORS) and hands back
+/// the raw bytes so callers can render via `Image.memory`.
+///
+/// Returns `null` for non-data-repo URLs or 404s. Family is keyed on
+/// the full URL (cache-buster `?v=` and all) so re-uploads invalidate
+/// the cache on their own.
+final githubRepoImageBytesProvider =
+    FutureProvider.family<Uint8List?, String>((ref, url) async {
+  if (!url.startsWith('https://raw.githubusercontent.com/')) return null;
+  final uri = Uri.parse(url);
+  final segments = uri.pathSegments;
+  // /<owner>/<repo>/<branch>/<...path>
+  if (segments.length < 4) return null;
+  final path = segments.sublist(3).join('/');
+  return ref.read(githubDataRepoProvider).readRaw(path);
+});
 
 /// Where each on-device JSON cache lives in the shared GitHub repo.
 /// Keep this list in sync with the [SystemDataStore] keys used for

@@ -1,10 +1,12 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/models/gear.dart';
 import 'package:swrpg_quickypedia/models/gear_sort.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/widgets/gear_placeholder.dart';
+import 'package:swrpg_quickypedia/widgets/github_repo_image.dart';
 
 class GearTile extends ConsumerWidget {
   final Gear gear;
@@ -111,6 +113,14 @@ class _Background extends StatelessWidget {
   Widget build(BuildContext context) {
     final url = imageUrl;
     if (url == null || url.isEmpty) return const GearPlaceholder();
+    if (kIsWeb && authHeaders != null) {
+      return GithubRepoImage(
+        url: url,
+        fit: BoxFit.cover,
+        placeholder: Container(color: const Color(0xFF111827)),
+        errorPlaceholder: const GearPlaceholder(),
+      );
+    }
     return CachedNetworkImage(
       imageUrl: url,
       httpHeaders: authHeaders,

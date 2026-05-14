@@ -4,9 +4,12 @@ import 'package:swrpg_quickypedia/models/armor.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
 import 'package:swrpg_quickypedia/screens/armor_view_screen.dart';
 import 'package:swrpg_quickypedia/screens/category_grid_screen.dart';
+import 'package:swrpg_quickypedia/theme.dart';
 import 'package:swrpg_quickypedia/widgets/armor_sort_menu.dart';
 import 'package:swrpg_quickypedia/widgets/armor_tile.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
+import 'package:swrpg_quickypedia/widgets/download_from_cloud_button.dart';
+import 'package:swrpg_quickypedia/widgets/search_bar_field.dart';
 
 /// Intermediate screen for armors: one horizontal row per Fandom
 /// subcategory, mirroring [WeaponsTypeScreen]. Tapping a row title
@@ -19,56 +22,14 @@ class ArmorsTypeScreen extends ConsumerWidget {
     final armorsAsync = ref.watch(armorsProvider);
     final scrape = ref.watch(armorsScrapeProvider);
     final running = scrape is ScrapeRunning;
-
-    final cloud = ref.watch(cloudSyncProvider);
-    final cloudBusy = cloud is CloudSyncRunning;
+    final query = ref.watch(searchQueryProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Armor'),
         actions: [
-          PopupMenuButton<String>(
-            icon: cloudBusy
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.cloud_sync_outlined),
-            tooltip: 'Cloud sync',
-            onSelected: (action) => switch (action) {
-              'pull' => _pullCloud(context, ref),
-              'push' => _pushCloud(context, ref),
-              'test' => _testCloud(context, ref),
-              _ => null,
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'pull',
-                child: ListTile(
-                  leading: Icon(Icons.cloud_download_outlined),
-                  title: Text('Pull databases'),
-                  subtitle: Text('Replace local with cloud'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'push',
-                child: ListTile(
-                  leading: Icon(Icons.cloud_upload_outlined),
-                  title: Text('Push databases'),
-                  subtitle: Text('Share local with cloud'),
-                ),
-              ),
-              PopupMenuDivider(),
-              PopupMenuItem(
-                value: 'test',
-                child: ListTile(
-                  leading: Icon(Icons.cloud_done_outlined),
-                  title: Text('Test connection'),
-                ),
-              ),
-            ],
-          ),
+          const DownloadFromCloudButton(),
+          const ArmorSortMenu(),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Fetch from wiki',
@@ -77,19 +38,28 @@ class ArmorsTypeScreen extends ConsumerWidget {
         ],
         bottom: _ArmorsScrapeBanner(state: scrape),
       ),
-      body: armorsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) =>
-            Center(child: Text('Failed to load armors: $error')),
-        data: (all) {
-          if (all.isEmpty) return _emptyState(context, ref, running, scrape);
-          return _buildRows(context, all);
-        },
+      body: Column(
+        children: [
+          const SearchBarField(),
+          Expanded(
+            child: armorsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, _) =>
+                  Center(child: Text('Failed to load armors: $error')),
+              data: (all) {
+                if (all.isEmpty) {
+                  return _emptyState(context, ref, running, scrape);
+                }
+                return _buildRows(context, all, query);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildRows(BuildContext context, List<Armor> all) {
+  Widget _buildRows(BuildContext context, List<Armor> all, String query) {
     final groups = _groupByCategory(all);
     return ListView.builder(
       itemCount: kArmorCategoryOrder.length,
@@ -97,29 +67,37 @@ class ArmorsTypeScreen extends ConsumerWidget {
         final type = kArmorCategoryOrder[i];
         final items = groups[type] ?? const <Armor>[];
         if (items.isEmpty) return const SizedBox.shrink();
+        final filtered = query.isEmpty
+            ? items
+            : items
+                .where((a) =>
+                    a.name.toLowerCase().contains(query.toLowerCase()))
+                .toList(growable: false);
         return CategoryRow(
           title: type,
           onTitleTap: () => _openTypeGrid(context, type, items),
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (_, j) {
-              final a = items[j];
-              return SizedBox(
-                width: 120,
-                child: ArmorTile(
-                  armor: a,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ArmorViewScreen(armor: a),
-                    ),
-                  ),
+          child: filtered.isEmpty
+              ? const _NoMatchTile()
+              : ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
+                  itemBuilder: (_, j) {
+                    final a = filtered[j];
+                    return SizedBox(
+                      width: 120,
+                      child: ArmorTile(
+                        armor: a,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => ArmorViewScreen(armor: a),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         );
       },
     );
@@ -149,13 +127,6 @@ class ArmorsTypeScreen extends ConsumerWidget {
                   ?.copyWith(color: Colors.grey.shade700),
             ),
             const SizedBox(height: 16),
-            FilledButton.icon(
-              icon: const Icon(Icons.cloud_download_outlined),
-              label: const Text('Pull from cloud'),
-              onPressed:
-                  running ? null : () => _pullCloud(context, ref),
-            ),
-            const SizedBox(height: 8),
             OutlinedButton.icon(
               icon: const Icon(Icons.travel_explore),
               label: const Text('Fetch from wiki'),
@@ -203,17 +174,6 @@ class ArmorsTypeScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _pullCloud(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Pulling databases from cloud…')),
-    );
-    final result =
-        await ref.read(cloudSyncProvider.notifier).pullDatabases();
-    if (!context.mounted) return;
-    _showSyncResult(context, result);
-  }
-
   Future<void> _pushCloud(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
@@ -226,9 +186,8 @@ class ArmorsTypeScreen extends ConsumerWidget {
   }
 
   void _showSyncResult(BuildContext context, CloudSyncResult result) {
-    final verb = result.direction == 'pull' ? 'Pulled' : 'Pushed';
     final summary = result.errors.isEmpty
-        ? '$verb ${result.succeeded} '
+        ? 'Pushed ${result.succeeded} '
             '${result.succeeded == 1 ? 'file' : 'files'}'
             '${result.skipped > 0 ? ' (${result.skipped} skipped)' : ''}.'
         : 'Some files failed:\n${result.errors.join('\n')}';
@@ -236,7 +195,7 @@ class ArmorsTypeScreen extends ConsumerWidget {
       showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text('Cloud ${result.direction} report'),
+          title: const Text('Cloud push report'),
           content: SingleChildScrollView(child: Text(summary)),
           actions: [
             TextButton(
@@ -250,29 +209,6 @@ class ArmorsTypeScreen extends ConsumerWidget {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(summary)));
     }
-  }
-
-  Future<void> _testCloud(BuildContext context, WidgetRef ref) async {
-    final repo = ref.read(githubDataRepoProvider);
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Checking cloud connection…')),
-    );
-    final result = await repo.healthCheck();
-    if (!context.mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(result.ok ? 'Cloud OK' : 'Cloud unreachable'),
-        content: SingleChildScrollView(child: Text(result.detail)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _runScrape(BuildContext context, WidgetRef ref) async {
@@ -370,6 +306,26 @@ Map<String, List<Armor>> _groupByCategory(List<Armor> all) {
 }
 
 /// Scrape progress / error banner, same shape as the weapons banner.
+/// "No matches" placeholder shown in a section's tile slot when the
+/// active search has zero matches in that section.
+class _NoMatchTile extends StatelessWidget {
+  const _NoMatchTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        'No matches',
+        style: TextStyle(
+          color: AppColors.inkFaint,
+          fontSize: 13,
+          fontStyle: FontStyle.italic,
+        ),
+      ),
+    );
+  }
+}
+
 class _ArmorsScrapeBanner extends ConsumerWidget
     implements PreferredSizeWidget {
   final ScrapeState state;

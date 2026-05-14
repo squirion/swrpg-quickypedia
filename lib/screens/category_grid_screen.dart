@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:swrpg_quickypedia/providers/providers.dart';
+import 'package:swrpg_quickypedia/widgets/download_from_cloud_button.dart';
+import 'package:swrpg_quickypedia/widgets/search_bar_field.dart';
 
 /// Generic grid screen for any category.
 ///
@@ -10,7 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// Use [CategoryGridScreen.comingSoon] for categories that aren't ready yet
 /// — only `title` and `icon` are needed, and the screen displays a
 /// placeholder.
-class CategoryGridScreen<T> extends ConsumerStatefulWidget {
+class CategoryGridScreen<T> extends ConsumerWidget {
   final String title;
   final IconData icon;
   final AsyncValue<List<T>> Function(WidgetRef ref)? watchItems;
@@ -22,7 +25,7 @@ class CategoryGridScreen<T> extends ConsumerStatefulWidget {
   /// empty (e.g. a "Fetch from wiki" call-to-action for system categories).
   final Widget Function(BuildContext context, WidgetRef ref)? emptyStateBuilder;
 
-  /// Optional `AppBar` actions (e.g. a refresh button).
+  /// Optional `AppBar` actions (e.g. a sort menu).
   final List<Widget> Function(BuildContext context, WidgetRef ref)?
       appBarActionsBuilder;
 
@@ -61,36 +64,24 @@ class CategoryGridScreen<T> extends ConsumerStatefulWidget {
   bool get _isComingSoon => watchItems == null;
 
   @override
-  ConsumerState<CategoryGridScreen<T>> createState() =>
-      _CategoryGridScreenState<T>();
-}
-
-class _CategoryGridScreenState<T>
-    extends ConsumerState<CategoryGridScreen<T>> {
-  final _searchController = TextEditingController();
-  String _query = '';
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final actions = widget.appBarActionsBuilder?.call(context, ref);
-    final belowAppBar = widget.belowAppBarBuilder?.call(context, ref);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final extra = appBarActionsBuilder?.call(context, ref) ?? const [];
+    final belowAppBar = belowAppBarBuilder?.call(context, ref);
+    // Download from cloud + any caller-supplied actions (sort menu,
+    // refresh, etc.). Download sits first so it's the same position
+    // as on the home AppBar.
+    final actions = <Widget>[const DownloadFromCloudButton(), ...extra];
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title),
+        title: Text(title),
         actions: actions,
         bottom: belowAppBar,
       ),
-      body: widget._isComingSoon ? _buildComingSoon() : _buildGrid(),
+      body: _isComingSoon ? _buildComingSoon(context) : _buildGrid(context, ref),
     );
   }
 
-  Widget _buildComingSoon() {
+  Widget _buildComingSoon(BuildContext context) {
     final theme = Theme.of(context);
     return Center(
       child: Padding(
@@ -98,7 +89,7 @@ class _CategoryGridScreenState<T>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(widget.icon, size: 80, color: Colors.grey.shade400),
+            Icon(icon, size: 80, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             Text(
               'Coming soon',
@@ -118,34 +109,12 @@ class _CategoryGridScreenState<T>
     );
   }
 
-  Widget _buildGrid() {
-    final itemsAsync = widget.watchItems!(ref);
+  Widget _buildGrid(BuildContext context, WidgetRef ref) {
+    final itemsAsync = watchItems!(ref);
+    final query = ref.watch(searchQueryProvider);
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-          child: TextField(
-            controller: _searchController,
-            onChanged: (v) => setState(() => _query = v),
-            decoration: InputDecoration(
-              hintText: widget.searchHint,
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _query.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _query = '');
-                      },
-                    ),
-              isDense: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
-            ),
-          ),
-        ),
+        SearchBarField(hintText: searchHint),
         Expanded(
           child: itemsAsync.when(
             loading: () =>
@@ -157,20 +126,20 @@ class _CategoryGridScreenState<T>
               ),
             ),
             data: (all) {
-              if (all.isEmpty && widget.emptyStateBuilder != null) {
-                return widget.emptyStateBuilder!(context, ref);
+              if (all.isEmpty && emptyStateBuilder != null) {
+                return emptyStateBuilder!(context, ref);
               }
-              final filtered = _query.isEmpty
+              final filtered = query.isEmpty
                   ? all
                   : all
-                      .where((item) => widget.matchesQuery!(item, _query))
+                      .where((item) => matchesQuery!(item, query))
                       .toList();
               if (filtered.isEmpty) {
                 return Center(
                   child: Text(
-                    _query.isEmpty
+                    query.isEmpty
                         ? 'No items in this category.'
-                        : 'No items match "$_query".',
+                        : 'No items match "$query".',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 );
@@ -185,8 +154,7 @@ class _CategoryGridScreenState<T>
                   mainAxisSpacing: 8,
                 ),
                 itemCount: filtered.length,
-                itemBuilder: (ctx, i) =>
-                    widget.itemBuilder!(ctx, filtered[i]),
+                itemBuilder: (ctx, i) => itemBuilder!(ctx, filtered[i]),
               );
             },
           ),

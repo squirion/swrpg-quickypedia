@@ -36,19 +36,26 @@ class GroupHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          Text(
-            label.toUpperCase(),
-            style: AppFonts.display(
-              const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 3.0,
-                color: AppColors.inkDim,
+          Flexible(
+            flex: 3,
+            child: Text(
+              label.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppFonts.display(
+                const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 3.0,
+                  color: AppColors.inkDim,
+                ),
               ),
             ),
           ),
           const SizedBox(width: 14),
-          Expanded(
+          Flexible(
+            flex: 1,
+            fit: FlexFit.tight,
             child: Container(
               height: 1,
               decoration: const BoxDecoration(

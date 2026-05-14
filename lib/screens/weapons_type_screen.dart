@@ -50,7 +50,7 @@ class WeaponsTypeScreen extends ConsumerWidget {
                 if (all.isEmpty) {
                   return _emptyState(context, ref, running, scrape);
                 }
-                return _buildRows(context, all, query);
+                return _buildRows(context, ref, all, query);
               },
             ),
           ),
@@ -59,7 +59,8 @@ class WeaponsTypeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildRows(BuildContext context, List<Weapon> all, String query) {
+  Widget _buildRows(
+      BuildContext context, WidgetRef ref, List<Weapon> all, String query) {
     final groups = _groupBySkill(all);
     return ListView.builder(
       itemCount: kWeaponSkillOrder.length,
@@ -75,7 +76,7 @@ class WeaponsTypeScreen extends ConsumerWidget {
                 .toList(growable: false);
         return CategoryRow(
           title: type,
-          onTitleTap: () => _openTypeGrid(context, type, items),
+          onTitleTap: () => _openTypeGrid(context, ref, type, items),
           child: filtered.isEmpty
               ? const _NoMatchTile()
               : ListView.separated(
@@ -89,11 +90,16 @@ class WeaponsTypeScreen extends ConsumerWidget {
                       width: 120,
                       child: WeaponTile(
                         weapon: w,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => WeaponViewScreen(weapon: w),
-                          ),
-                        ),
+                        onTap: () {
+                          ref
+                              .read(recentlyViewedProvider.notifier)
+                              .record('weapon', w.name);
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => WeaponViewScreen(weapon: w),
+                            ),
+                          );
+                        },
                       ),
                     );
                   },
@@ -145,8 +151,8 @@ class WeaponsTypeScreen extends ConsumerWidget {
     );
   }
 
-  void _openTypeGrid(
-      BuildContext context, String type, List<Weapon> items) {
+  void _openTypeGrid(BuildContext context, WidgetRef ref, String type,
+      List<Weapon> items) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CategoryGridScreen<Weapon>(
@@ -161,11 +167,16 @@ class WeaponsTypeScreen extends ConsumerWidget {
               w.name.toLowerCase().contains(q.toLowerCase()),
           itemBuilder: (ctx, w) => WeaponTile(
             weapon: w,
-            onTap: () => Navigator.of(ctx).push(
-              MaterialPageRoute(
-                builder: (_) => WeaponViewScreen(weapon: w),
-              ),
-            ),
+            onTap: () {
+              ref
+                  .read(recentlyViewedProvider.notifier)
+                  .record('weapon', w.name);
+              Navigator.of(ctx).push(
+                MaterialPageRoute(
+                  builder: (_) => WeaponViewScreen(weapon: w),
+                ),
+              );
+            },
           ),
           searchHint: 'Search $type',
           appBarActionsBuilder: (_, _) => const [WeaponSortMenu()],

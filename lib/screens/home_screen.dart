@@ -17,15 +17,18 @@ import 'package:swrpg_quickypedia/screens/vehicle_view_screen.dart';
 import 'package:swrpg_quickypedia/screens/vehicles_type_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapon_view_screen.dart';
 import 'package:swrpg_quickypedia/screens/weapons_type_screen.dart';
+import 'package:swrpg_quickypedia/models/campaign.dart';
 import 'package:swrpg_quickypedia/theme.dart';
 import 'package:swrpg_quickypedia/widgets/armor_tile.dart';
 import 'package:swrpg_quickypedia/widgets/beast_tile.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
 import 'package:swrpg_quickypedia/widgets/character_tile.dart';
+import 'package:swrpg_quickypedia/widgets/section_background.dart';
 import 'package:swrpg_quickypedia/widgets/download_from_cloud_button.dart';
 import 'package:swrpg_quickypedia/widgets/gear_tile.dart';
 import 'package:swrpg_quickypedia/widgets/group_header.dart';
 import 'package:swrpg_quickypedia/widgets/home_system_sort_menu.dart';
+import 'package:swrpg_quickypedia/widgets/recently_viewed_row.dart';
 import 'package:swrpg_quickypedia/widgets/search_bar_field.dart';
 import 'package:swrpg_quickypedia/widgets/settings_cog_menu.dart';
 import 'package:swrpg_quickypedia/widgets/starship_tile.dart';
@@ -35,7 +38,7 @@ import 'package:swrpg_quickypedia/widgets/weapon_tile.dart';
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
-  void _openCharactersGrid(BuildContext context) {
+  void _openCharactersGrid(BuildContext context, WidgetRef ref) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CategoryGridScreen<Character>(
@@ -50,11 +53,16 @@ class HomeScreen extends ConsumerWidget {
           },
           itemBuilder: (ctx, c) => CharacterTile(
             character: c,
-            onTap: () => Navigator.of(ctx).push(
-              MaterialPageRoute(
-                builder: (_) => CharacterBioScreen(character: c),
-              ),
-            ),
+            onTap: () {
+              ref
+                  .read(recentlyViewedProvider.notifier)
+                  .record('character', c.id);
+              Navigator.of(ctx).push(
+                MaterialPageRoute(
+                  builder: (_) => CharacterBioScreen(character: c),
+                ),
+              );
+            },
           ),
           searchHint: 'Search by name or owner',
         ),
@@ -109,6 +117,9 @@ class HomeScreen extends ConsumerWidget {
     final beasts = ref.watch(beastsProvider);
     final query = ref.watch(searchQueryProvider);
     final searching = query.isNotEmpty;
+    final campaignLabel = _resolveCampaignLabel(ref);
+    final recent = ref.watch(recentlyViewedResolvedProvider);
+    final showRecent = recent.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -141,24 +152,29 @@ class HomeScreen extends ConsumerWidget {
         child: ListView(
           children: [
             const SearchBarField(),
-            // Campaign group — subtly tinted container so the three
-            // campaign-dependent rows read as one section.
-            Container(
-              margin: const EdgeInsets.fromLTRB(8, 6, 8, 12),
-              padding: const EdgeInsets.only(top: 4, bottom: 8),
-              decoration: BoxDecoration(
-                color: AppColors.bg2,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.lineStrong),
+            const SizedBox(height: 6),
+            if (showRecent) ...[
+              SectionBackground(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    GroupHeader(number: '00', label: 'Recently viewed'),
+                    RecentlyViewedRow(),
+                    SizedBox(height: 8),
+                  ],
+                ),
               ),
+              const SizedBox(height: 12),
+            ],
+            SectionBackground(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const GroupHeader(number: '01', label: 'Campaign'),
+                  GroupHeader(number: '01', label: campaignLabel),
                   _CharactersRow(
                     characters: characters,
                     query: query,
-                    onTitleTap: () => _openCharactersGrid(context),
+                    onTitleTap: () => _openCharactersGrid(context, ref),
                   ),
                   // Coming-soon rows are hidden entirely while the user
                   // is searching — nothing meaningful to match against.
@@ -174,18 +190,21 @@ class HomeScreen extends ConsumerWidget {
                       child: const ComingSoonTile(icon: Icons.event),
                     ),
                   ],
+                  const SizedBox(height: 8),
                 ],
               ),
             ),
-            // System group — same row layout, plain background. The
-            // shared system sort menu sits in the trailing slot of the
-            // group header.
-            const GroupHeader(
-              number: '02',
-              label: 'System',
-              trailing: HomeSystemSortMenu(),
-            ),
-            _SystemRow<dynamic>(
+            const SizedBox(height: 12),
+            SectionBackground(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const GroupHeader(
+                    number: '02',
+                    label: 'System',
+                    trailing: HomeSystemSortMenu(),
+                  ),
+                  _SystemRow<dynamic>(
               title: 'Weapons',
               icon: Icons.flash_on,
               async: weapons,
@@ -194,11 +213,16 @@ class HomeScreen extends ConsumerWidget {
               nameOf: (w) => (w as dynamic).name as String,
               tileBuilder: (item) => WeaponTile(
                 weapon: item,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => WeaponViewScreen(weapon: item),
-                  ),
-                ),
+                onTap: () {
+                  ref
+                      .read(recentlyViewedProvider.notifier)
+                      .record('weapon', item.name as String);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => WeaponViewScreen(weapon: item),
+                    ),
+                  );
+                },
               ),
             ),
             _SystemRow<dynamic>(
@@ -210,11 +234,16 @@ class HomeScreen extends ConsumerWidget {
               nameOf: (a) => (a as dynamic).name as String,
               tileBuilder: (item) => ArmorTile(
                 armor: item,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ArmorViewScreen(armor: item),
-                  ),
-                ),
+                onTap: () {
+                  ref
+                      .read(recentlyViewedProvider.notifier)
+                      .record('armor', item.name as String);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ArmorViewScreen(armor: item),
+                    ),
+                  );
+                },
               ),
             ),
             _SystemRow<dynamic>(
@@ -226,11 +255,16 @@ class HomeScreen extends ConsumerWidget {
               nameOf: (g) => (g as dynamic).name as String,
               tileBuilder: (item) => GearTile(
                 gear: item,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => GearViewScreen(gear: item),
-                  ),
-                ),
+                onTap: () {
+                  ref
+                      .read(recentlyViewedProvider.notifier)
+                      .record('gear', item.name as String);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => GearViewScreen(gear: item),
+                    ),
+                  );
+                },
               ),
             ),
             _SystemRow<dynamic>(
@@ -242,11 +276,16 @@ class HomeScreen extends ConsumerWidget {
               nameOf: (v) => (v as dynamic).name as String,
               tileBuilder: (item) => VehicleTile(
                 vehicle: item,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => VehicleViewScreen(vehicle: item),
-                  ),
-                ),
+                onTap: () {
+                  ref
+                      .read(recentlyViewedProvider.notifier)
+                      .record('vehicle', item.name as String);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => VehicleViewScreen(vehicle: item),
+                    ),
+                  );
+                },
               ),
             ),
             _SystemRow<dynamic>(
@@ -258,11 +297,16 @@ class HomeScreen extends ConsumerWidget {
               nameOf: (s) => (s as dynamic).name as String,
               tileBuilder: (item) => StarshipTile(
                 starship: item,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => StarshipViewScreen(starship: item),
-                  ),
-                ),
+                onTap: () {
+                  ref
+                      .read(recentlyViewedProvider.notifier)
+                      .record('starship', item.name as String);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => StarshipViewScreen(starship: item),
+                    ),
+                  );
+                },
               ),
             ),
             _SystemRow<dynamic>(
@@ -274,11 +318,20 @@ class HomeScreen extends ConsumerWidget {
               nameOf: (b) => (b as dynamic).name as String,
               tileBuilder: (item) => BeastTile(
                 beast: item,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => BeastViewScreen(beast: item),
-                  ),
-                ),
+                onTap: () {
+                  ref
+                      .read(recentlyViewedProvider.notifier)
+                      .record('beast', item.name as String);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => BeastViewScreen(beast: item),
+                    ),
+                  );
+                },
+              ),
+            ),
+                  const SizedBox(height: 8),
+                ],
               ),
             ),
             const SizedBox(height: 16),
@@ -289,9 +342,24 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
+String _resolveCampaignLabel(WidgetRef ref) {
+  final id = ref.watch(campaignIdProvider);
+  if (id == null || id.isEmpty) return 'Campaign';
+  final campaignsAsync = ref.watch(campaignsProvider);
+  return campaignsAsync.maybeWhen(
+    data: (List<Campaign> list) {
+      for (final c in list) {
+        if (c.id == id) return c.name;
+      }
+      return 'Campaign';
+    },
+    orElse: () => 'Campaign',
+  );
+}
+
 /// Characters row needs a name + author predicate, so it gets its own
 /// small wrapper (rather than the generic _SystemRow).
-class _CharactersRow extends StatelessWidget {
+class _CharactersRow extends ConsumerWidget {
   final AsyncValue<List<Character>> characters;
   final String query;
   final VoidCallback onTitleTap;
@@ -303,7 +371,7 @@ class _CharactersRow extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return CategoryRow(
       title: 'Characters',
       onTitleTap: onTitleTap,
@@ -344,11 +412,16 @@ class _CharactersRow extends StatelessWidget {
                 width: 120,
                 child: CharacterTile(
                   character: c,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => CharacterBioScreen(character: c),
-                    ),
-                  ),
+                  onTap: () {
+                    ref
+                        .read(recentlyViewedProvider.notifier)
+                        .record('character', c.id);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => CharacterBioScreen(character: c),
+                      ),
+                    );
+                  },
                 ),
               );
             },

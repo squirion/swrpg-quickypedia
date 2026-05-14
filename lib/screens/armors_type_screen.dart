@@ -50,7 +50,7 @@ class ArmorsTypeScreen extends ConsumerWidget {
                 if (all.isEmpty) {
                   return _emptyState(context, ref, running, scrape);
                 }
-                return _buildRows(context, all, query);
+                return _buildRows(context, ref, all, query);
               },
             ),
           ),
@@ -59,7 +59,8 @@ class ArmorsTypeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildRows(BuildContext context, List<Armor> all, String query) {
+  Widget _buildRows(
+      BuildContext context, WidgetRef ref, List<Armor> all, String query) {
     final groups = _groupByCategory(all);
     return ListView.builder(
       itemCount: kArmorCategoryOrder.length,
@@ -75,7 +76,7 @@ class ArmorsTypeScreen extends ConsumerWidget {
                 .toList(growable: false);
         return CategoryRow(
           title: type,
-          onTitleTap: () => _openTypeGrid(context, type, items),
+          onTitleTap: () => _openTypeGrid(context, ref, type, items),
           child: filtered.isEmpty
               ? const _NoMatchTile()
               : ListView.separated(
@@ -89,11 +90,16 @@ class ArmorsTypeScreen extends ConsumerWidget {
                       width: 120,
                       child: ArmorTile(
                         armor: a,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => ArmorViewScreen(armor: a),
-                          ),
-                        ),
+                        onTap: () {
+                          ref
+                              .read(recentlyViewedProvider.notifier)
+                              .record('armor', a.name);
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ArmorViewScreen(armor: a),
+                            ),
+                          );
+                        },
                       ),
                     );
                   },
@@ -145,8 +151,8 @@ class ArmorsTypeScreen extends ConsumerWidget {
     );
   }
 
-  void _openTypeGrid(
-      BuildContext context, String type, List<Armor> items) {
+  void _openTypeGrid(BuildContext context, WidgetRef ref, String type,
+      List<Armor> items) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CategoryGridScreen<Armor>(
@@ -161,11 +167,16 @@ class ArmorsTypeScreen extends ConsumerWidget {
               a.name.toLowerCase().contains(q.toLowerCase()),
           itemBuilder: (ctx, a) => ArmorTile(
             armor: a,
-            onTap: () => Navigator.of(ctx).push(
-              MaterialPageRoute(
-                builder: (_) => ArmorViewScreen(armor: a),
-              ),
-            ),
+            onTap: () {
+              ref
+                  .read(recentlyViewedProvider.notifier)
+                  .record('armor', a.name);
+              Navigator.of(ctx).push(
+                MaterialPageRoute(
+                  builder: (_) => ArmorViewScreen(armor: a),
+                ),
+              );
+            },
           ),
           searchHint: 'Search $type',
           appBarActionsBuilder: (_, _) => const [ArmorSortMenu()],

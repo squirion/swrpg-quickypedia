@@ -50,7 +50,7 @@ class GearTypeScreen extends ConsumerWidget {
                 if (all.isEmpty) {
                   return _emptyState(context, ref, running, scrape);
                 }
-                return _buildRows(context, all, query);
+                return _buildRows(context, ref, all, query);
               },
             ),
           ),
@@ -59,7 +59,8 @@ class GearTypeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildRows(BuildContext context, List<Gear> all, String query) {
+  Widget _buildRows(
+      BuildContext context, WidgetRef ref, List<Gear> all, String query) {
     final groups = _groupByCategory(all);
     return ListView.builder(
       itemCount: kGearCategoryOrder.length,
@@ -75,7 +76,7 @@ class GearTypeScreen extends ConsumerWidget {
                 .toList(growable: false);
         return CategoryRow(
           title: type,
-          onTitleTap: () => _openTypeGrid(context, type, items),
+          onTitleTap: () => _openTypeGrid(context, ref, type, items),
           child: filtered.isEmpty
               ? const _NoMatchTile()
               : ListView.separated(
@@ -89,11 +90,16 @@ class GearTypeScreen extends ConsumerWidget {
                       width: 120,
                       child: GearTile(
                         gear: g,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => GearViewScreen(gear: g),
-                          ),
-                        ),
+                        onTap: () {
+                          ref
+                              .read(recentlyViewedProvider.notifier)
+                              .record('gear', g.name);
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => GearViewScreen(gear: g),
+                            ),
+                          );
+                        },
                       ),
                     );
                   },
@@ -145,7 +151,8 @@ class GearTypeScreen extends ConsumerWidget {
     );
   }
 
-  void _openTypeGrid(BuildContext context, String type, List<Gear> items) {
+  void _openTypeGrid(BuildContext context, WidgetRef ref, String type,
+      List<Gear> items) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CategoryGridScreen<Gear>(
@@ -160,11 +167,16 @@ class GearTypeScreen extends ConsumerWidget {
               g.name.toLowerCase().contains(q.toLowerCase()),
           itemBuilder: (ctx, g) => GearTile(
             gear: g,
-            onTap: () => Navigator.of(ctx).push(
-              MaterialPageRoute(
-                builder: (_) => GearViewScreen(gear: g),
-              ),
-            ),
+            onTap: () {
+              ref
+                  .read(recentlyViewedProvider.notifier)
+                  .record('gear', g.name);
+              Navigator.of(ctx).push(
+                MaterialPageRoute(
+                  builder: (_) => GearViewScreen(gear: g),
+                ),
+              );
+            },
           ),
           searchHint: 'Search $type',
           appBarActionsBuilder: (_, _) => const [GearSortMenu()],

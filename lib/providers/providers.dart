@@ -10,6 +10,7 @@ import 'package:swrpg_quickypedia/models/character.dart';
 import 'package:swrpg_quickypedia/models/gear.dart';
 import 'package:swrpg_quickypedia/models/gear_sort.dart';
 import 'package:swrpg_quickypedia/models/item_quality.dart';
+import 'package:swrpg_quickypedia/models/recently_viewed_entry.dart';
 import 'package:swrpg_quickypedia/models/starship.dart';
 import 'package:swrpg_quickypedia/models/starship_sort.dart';
 import 'package:swrpg_quickypedia/models/vehicle.dart';
@@ -32,6 +33,7 @@ import 'package:swrpg_quickypedia/services/parsers/item_qualities_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/starship_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/vehicle_parser.dart';
 import 'package:swrpg_quickypedia/services/parsers/weapon_parser.dart';
+import 'package:swrpg_quickypedia/services/recently_viewed_store.dart';
 import 'package:swrpg_quickypedia/services/starship_image_upload.dart';
 import 'package:swrpg_quickypedia/services/starship_sort.dart';
 import 'package:swrpg_quickypedia/services/vehicle_image_upload.dart';
@@ -537,6 +539,87 @@ class HomeSystemSortNotifier extends Notifier<HomeSystemSort> {
     ref.read(beastSortProvider.notifier).state =
         BeastSort(attr: beastAttr, ascending: dir);
   }
+}
+
+// --- Recently viewed ---
+//
+// A 10-deep dedup'd FIFO queue of items the user has opened from a
+// tile. Persisted to SharedPreferences so the queue survives restarts.
+// Tap sites outside the Recently Viewed row call
+// `recentlyViewedProvider.notifier.record(kind, id)` immediately before
+// pushing the detail screen; the row itself does NOT call `record`, so
+// reopening from the row preserves the queue's order.
+
+final recentlyViewedStoreProvider =
+    Provider<RecentlyViewedStore>((_) => RecentlyViewedStore());
+
+final recentlyViewedProvider = AsyncNotifierProvider<RecentlyViewedNotifier,
+    List<RecentlyViewedEntry>>(RecentlyViewedNotifier.new);
+
+class RecentlyViewedNotifier
+    extends AsyncNotifier<List<RecentlyViewedEntry>> {
+  static const _max = 10;
+
+  @override
+  Future<List<RecentlyViewedEntry>> build() =>
+      ref.read(recentlyViewedStoreProvider).load();
+
+  Future<void> record(String kind, String id) async {
+    final current = state.value ?? const <RecentlyViewedEntry>[];
+    final next = <RecentlyViewedEntry>[
+      RecentlyViewedEntry(kind: kind, id: id),
+      ...current.where((e) => !(e.kind == kind && e.id == id)),
+    ].take(_max).toList(growable: false);
+    state = AsyncData(next);
+    await ref.read(recentlyViewedStoreProvider).save(next);
+  }
+}
+
+/// Join the persisted queue against the in-memory per-category lists,
+/// returning the resolved (kind, item) pairs in queue order. Entries
+/// whose underlying item is missing (e.g. dropped by a re-scrape) are
+/// silently skipped — the persisted entry stays in storage in case the
+/// item returns in a later scrape.
+final recentlyViewedResolvedProvider =
+    Provider<List<({String kind, Object item})>>((ref) {
+  final entries = ref.watch(recentlyViewedProvider).value ?? const [];
+  final weapons = ref.watch(weaponsProvider).value ?? const <Weapon>[];
+  final armors = ref.watch(armorsProvider).value ?? const <Armor>[];
+  final gears = ref.watch(gearProvider).value ?? const <Gear>[];
+  final vehicles = ref.watch(vehiclesProvider).value ?? const <Vehicle>[];
+  final starships = ref.watch(starshipsProvider).value ?? const <Starship>[];
+  final beasts = ref.watch(beastsProvider).value ?? const <Beast>[];
+  final chars = ref.watch(charactersProvider).value ?? const <Character>[];
+
+  final out = <({String kind, Object item})>[];
+  for (final e in entries) {
+    Object? match;
+    switch (e.kind) {
+      case 'weapon':
+        match = _firstWhereOrNull<Weapon>(weapons, (w) => w.name == e.id);
+      case 'armor':
+        match = _firstWhereOrNull<Armor>(armors, (a) => a.name == e.id);
+      case 'gear':
+        match = _firstWhereOrNull<Gear>(gears, (g) => g.name == e.id);
+      case 'vehicle':
+        match = _firstWhereOrNull<Vehicle>(vehicles, (v) => v.name == e.id);
+      case 'starship':
+        match = _firstWhereOrNull<Starship>(starships, (s) => s.name == e.id);
+      case 'beast':
+        match = _firstWhereOrNull<Beast>(beasts, (b) => b.name == e.id);
+      case 'character':
+        match = _firstWhereOrNull<Character>(chars, (c) => c.id == e.id);
+    }
+    if (match != null) out.add((kind: e.kind, item: match));
+  }
+  return out;
+});
+
+T? _firstWhereOrNull<T>(Iterable<T> items, bool Function(T) test) {
+  for (final item in items) {
+    if (test(item)) return item;
+  }
+  return null;
 }
 
 // --- System data: weapons ---

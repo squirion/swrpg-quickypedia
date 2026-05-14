@@ -47,7 +47,7 @@ class StarshipsTypeScreen extends ConsumerWidget {
                 if (all.isEmpty) {
                   return _emptyState(context, ref, running, scrape);
                 }
-                return _buildRows(context, all, query);
+                return _buildRows(context, ref, all, query);
               },
             ),
           ),
@@ -56,7 +56,8 @@ class StarshipsTypeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildRows(BuildContext context, List<Starship> all, String query) {
+  Widget _buildRows(
+      BuildContext context, WidgetRef ref, List<Starship> all, String query) {
     final groups = _groupByCategory(all);
     return ListView.builder(
       itemCount: kStarshipCategoryOrder.length,
@@ -72,7 +73,7 @@ class StarshipsTypeScreen extends ConsumerWidget {
                 .toList(growable: false);
         return CategoryRow(
           title: type,
-          onTitleTap: () => _openTypeGrid(context, type, items),
+          onTitleTap: () => _openTypeGrid(context, ref, type, items),
           child: filtered.isEmpty
               ? const _NoMatchTile()
               : ListView.separated(
@@ -86,11 +87,16 @@ class StarshipsTypeScreen extends ConsumerWidget {
                       width: 120,
                       child: StarshipTile(
                         starship: s,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => StarshipViewScreen(starship: s),
-                          ),
-                        ),
+                        onTap: () {
+                          ref
+                              .read(recentlyViewedProvider.notifier)
+                              .record('starship', s.name);
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => StarshipViewScreen(starship: s),
+                            ),
+                          );
+                        },
                       ),
                     );
                   },
@@ -143,7 +149,8 @@ class StarshipsTypeScreen extends ConsumerWidget {
     );
   }
 
-  void _openTypeGrid(BuildContext context, String type, List<Starship> items) {
+  void _openTypeGrid(BuildContext context, WidgetRef ref, String type,
+      List<Starship> items) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CategoryGridScreen<Starship>(
@@ -158,11 +165,16 @@ class StarshipsTypeScreen extends ConsumerWidget {
               s.name.toLowerCase().contains(q.toLowerCase()),
           itemBuilder: (ctx, s) => StarshipTile(
             starship: s,
-            onTap: () => Navigator.of(ctx).push(
-              MaterialPageRoute(
-                builder: (_) => StarshipViewScreen(starship: s),
-              ),
-            ),
+            onTap: () {
+              ref
+                  .read(recentlyViewedProvider.notifier)
+                  .record('starship', s.name);
+              Navigator.of(ctx).push(
+                MaterialPageRoute(
+                  builder: (_) => StarshipViewScreen(starship: s),
+                ),
+              );
+            },
           ),
           searchHint: 'Search $type',
           appBarActionsBuilder: (_, _) => const [StarshipSortMenu()],

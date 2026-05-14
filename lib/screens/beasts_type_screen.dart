@@ -47,7 +47,7 @@ class BeastsTypeScreen extends ConsumerWidget {
                 if (all.isEmpty) {
                   return _emptyState(context, ref, running, scrape);
                 }
-                return _buildRows(context, all, query);
+                return _buildRows(context, ref, all, query);
               },
             ),
           ),
@@ -56,7 +56,8 @@ class BeastsTypeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildRows(BuildContext context, List<Beast> all, String query) {
+  Widget _buildRows(
+      BuildContext context, WidgetRef ref, List<Beast> all, String query) {
     final groups = _groupByCategory(all);
     return ListView.builder(
       itemCount: kBeastCategoryOrder.length,
@@ -72,7 +73,7 @@ class BeastsTypeScreen extends ConsumerWidget {
                 .toList(growable: false);
         return CategoryRow(
           title: type,
-          onTitleTap: () => _openTypeGrid(context, type, items),
+          onTitleTap: () => _openTypeGrid(context, ref, type, items),
           child: filtered.isEmpty
               ? const _NoMatchTile()
               : ListView.separated(
@@ -86,11 +87,16 @@ class BeastsTypeScreen extends ConsumerWidget {
                       width: 120,
                       child: BeastTile(
                         beast: b,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => BeastViewScreen(beast: b),
-                          ),
-                        ),
+                        onTap: () {
+                          ref
+                              .read(recentlyViewedProvider.notifier)
+                              .record('beast', b.name);
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => BeastViewScreen(beast: b),
+                            ),
+                          );
+                        },
                       ),
                     );
                   },
@@ -142,7 +148,8 @@ class BeastsTypeScreen extends ConsumerWidget {
     );
   }
 
-  void _openTypeGrid(BuildContext context, String type, List<Beast> items) {
+  void _openTypeGrid(BuildContext context, WidgetRef ref, String type,
+      List<Beast> items) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CategoryGridScreen<Beast>(
@@ -157,11 +164,16 @@ class BeastsTypeScreen extends ConsumerWidget {
               b.name.toLowerCase().contains(q.toLowerCase()),
           itemBuilder: (ctx, b) => BeastTile(
             beast: b,
-            onTap: () => Navigator.of(ctx).push(
-              MaterialPageRoute(
-                builder: (_) => BeastViewScreen(beast: b),
-              ),
-            ),
+            onTap: () {
+              ref
+                  .read(recentlyViewedProvider.notifier)
+                  .record('beast', b.name);
+              Navigator.of(ctx).push(
+                MaterialPageRoute(
+                  builder: (_) => BeastViewScreen(beast: b),
+                ),
+              );
+            },
           ),
           searchHint: 'Search $type',
           appBarActionsBuilder: (_, _) => const [BeastSortMenu()],

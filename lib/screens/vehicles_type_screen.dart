@@ -47,7 +47,7 @@ class VehiclesTypeScreen extends ConsumerWidget {
                 if (all.isEmpty) {
                   return _emptyState(context, ref, running, scrape);
                 }
-                return _buildRows(context, all, query);
+                return _buildRows(context, ref, all, query);
               },
             ),
           ),
@@ -56,7 +56,8 @@ class VehiclesTypeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildRows(BuildContext context, List<Vehicle> all, String query) {
+  Widget _buildRows(
+      BuildContext context, WidgetRef ref, List<Vehicle> all, String query) {
     final groups = _groupByCategory(all);
     return ListView.builder(
       itemCount: kVehicleCategoryOrder.length,
@@ -72,7 +73,7 @@ class VehiclesTypeScreen extends ConsumerWidget {
                 .toList(growable: false);
         return CategoryRow(
           title: type,
-          onTitleTap: () => _openTypeGrid(context, type, items),
+          onTitleTap: () => _openTypeGrid(context, ref, type, items),
           child: filtered.isEmpty
               ? const _NoMatchTile()
               : ListView.separated(
@@ -86,11 +87,16 @@ class VehiclesTypeScreen extends ConsumerWidget {
                       width: 120,
                       child: VehicleTile(
                         vehicle: v,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => VehicleViewScreen(vehicle: v),
-                          ),
-                        ),
+                        onTap: () {
+                          ref
+                              .read(recentlyViewedProvider.notifier)
+                              .record('vehicle', v.name);
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => VehicleViewScreen(vehicle: v),
+                            ),
+                          );
+                        },
                       ),
                     );
                   },
@@ -143,7 +149,8 @@ class VehiclesTypeScreen extends ConsumerWidget {
     );
   }
 
-  void _openTypeGrid(BuildContext context, String type, List<Vehicle> items) {
+  void _openTypeGrid(BuildContext context, WidgetRef ref, String type,
+      List<Vehicle> items) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CategoryGridScreen<Vehicle>(
@@ -158,11 +165,16 @@ class VehiclesTypeScreen extends ConsumerWidget {
               v.name.toLowerCase().contains(q.toLowerCase()),
           itemBuilder: (ctx, v) => VehicleTile(
             vehicle: v,
-            onTap: () => Navigator.of(ctx).push(
-              MaterialPageRoute(
-                builder: (_) => VehicleViewScreen(vehicle: v),
-              ),
-            ),
+            onTap: () {
+              ref
+                  .read(recentlyViewedProvider.notifier)
+                  .record('vehicle', v.name);
+              Navigator.of(ctx).push(
+                MaterialPageRoute(
+                  builder: (_) => VehicleViewScreen(vehicle: v),
+                ),
+              );
+            },
           ),
           searchHint: 'Search $type',
           appBarActionsBuilder: (_, _) => const [VehicleSortMenu()],

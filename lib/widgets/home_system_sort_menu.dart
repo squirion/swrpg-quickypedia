@@ -15,6 +15,7 @@ class HomeSystemSortMenu extends ConsumerWidget {
     final sort = ref.watch(homeSystemSortProvider);
     return PopupMenuButton<HomeSystemSortAttr>(
       icon: const Icon(Icons.sort, size: 20),
+      padding: EdgeInsets.zero,
       tooltip: 'Sort system rows',
       onSelected: (attr) =>
           ref.read(homeSystemSortProvider.notifier).select(attr),

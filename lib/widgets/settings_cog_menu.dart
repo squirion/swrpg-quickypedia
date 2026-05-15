@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:swrpg_quickypedia/providers/providers.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// AppBar settings menu surfacing the less-frequent cloud actions —
 /// Push to cloud + Test connection. Pull lives in a dedicated button
@@ -25,10 +27,11 @@ class SettingsCogMenu extends ConsumerWidget {
       onSelected: (action) => switch (action) {
         'push' => _pushCloud(context, ref),
         'test' => _testCloud(context, ref),
+        'download_apk' => _openApkDownload(),
         _ => null,
       },
-      itemBuilder: (_) => const [
-        PopupMenuItem(
+      itemBuilder: (_) => [
+        const PopupMenuItem(
           value: 'push',
           child: ListTile(
             leading: Icon(Icons.cloud_upload_outlined),
@@ -36,16 +39,34 @@ class SettingsCogMenu extends ConsumerWidget {
             subtitle: Text('Share local with cloud'),
           ),
         ),
-        PopupMenuDivider(),
-        PopupMenuItem(
+        const PopupMenuDivider(),
+        const PopupMenuItem(
           value: 'test',
           child: ListTile(
             leading: Icon(Icons.cloud_done_outlined),
             title: Text('Test connection'),
           ),
         ),
+        if (kIsWeb) ...const [
+          PopupMenuDivider(),
+          PopupMenuItem(
+            value: 'download_apk',
+            child: ListTile(
+              leading: Icon(Icons.android_outlined),
+              title: Text('Download Android app'),
+              subtitle: Text('Latest signed APK'),
+            ),
+          ),
+        ],
       ],
     );
+  }
+
+  Future<void> _openApkDownload() async {
+    final uri = Uri.parse(
+      'https://github.com/squirion/swrpg-quickypedia/releases/latest/download/swrpg-quickypedia.apk',
+    );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Future<void> _pushCloud(BuildContext context, WidgetRef ref) async {

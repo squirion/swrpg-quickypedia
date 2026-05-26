@@ -11,6 +11,7 @@ import 'package:swrpg_quickypedia/widgets/download_from_cloud_button.dart';
 import 'package:swrpg_quickypedia/widgets/gear_sort_menu.dart';
 import 'package:swrpg_quickypedia/widgets/gear_tile.dart';
 import 'package:swrpg_quickypedia/widgets/search_bar_field.dart';
+import 'package:swrpg_quickypedia/widgets/web_row_scroll_behavior.dart';
 
 /// Intermediate screen for gear: one row per Fandom article-body
 /// section in [kGearCategoryOrder]. Tapping a row title opens a
@@ -40,23 +41,26 @@ class GearTypeScreen extends ConsumerWidget {
         ],
         bottom: _GearScrapeBanner(state: scrape),
       ),
-      body: Column(
-        children: [
-          const SearchBarField(),
-          Expanded(
-            child: gearAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) =>
-                  Center(child: Text('Failed to load gear: $error')),
-              data: (all) {
-                if (all.isEmpty) {
-                  return _emptyState(context, ref, running, scrape);
-                }
-                return _buildRows(context, ref, all, query);
-              },
+      body: ScrollConfiguration(
+        behavior: webRowScrollBehavior,
+        child: Column(
+          children: [
+            const SearchBarField(),
+            Expanded(
+              child: gearAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, _) =>
+                    Center(child: Text('Failed to load gear: $error')),
+                data: (all) {
+                  if (all.isEmpty) {
+                    return _emptyState(context, ref, running, scrape);
+                  }
+                  return _buildRows(context, ref, all, query);
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

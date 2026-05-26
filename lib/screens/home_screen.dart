@@ -34,6 +34,7 @@ import 'package:swrpg_quickypedia/widgets/settings_cog_menu.dart';
 import 'package:swrpg_quickypedia/widgets/starship_tile.dart';
 import 'package:swrpg_quickypedia/widgets/vehicle_tile.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_tile.dart';
+import 'package:swrpg_quickypedia/widgets/web_row_scroll_behavior.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -144,12 +145,14 @@ class HomeScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(charactersProvider);
-          await ref.read(charactersProvider.future);
-        },
-        child: ListView(
+      body: ScrollConfiguration(
+        behavior: webRowScrollBehavior,
+        child: RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(charactersProvider);
+            await ref.read(charactersProvider.future);
+          },
+          child: ListView(
           children: [
             const SearchBarField(),
             const SizedBox(height: 6),
@@ -336,6 +339,7 @@ class HomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
           ],
+        ),
         ),
       ),
     );

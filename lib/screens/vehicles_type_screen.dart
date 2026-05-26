@@ -11,6 +11,7 @@ import 'package:swrpg_quickypedia/widgets/download_from_cloud_button.dart';
 import 'package:swrpg_quickypedia/widgets/search_bar_field.dart';
 import 'package:swrpg_quickypedia/widgets/vehicle_sort_menu.dart';
 import 'package:swrpg_quickypedia/widgets/vehicle_tile.dart';
+import 'package:swrpg_quickypedia/widgets/web_row_scroll_behavior.dart';
 
 class VehiclesTypeScreen extends ConsumerWidget {
   const VehiclesTypeScreen({super.key});
@@ -37,23 +38,27 @@ class VehiclesTypeScreen extends ConsumerWidget {
         ],
         bottom: _VehiclesScrapeBanner(state: scrape),
       ),
-      body: Column(
-        children: [
-          const SearchBarField(),
-          Expanded(
-            child: vehiclesAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) =>
-                  Center(child: Text('Failed to load vehicles: $error')),
-              data: (all) {
-                if (all.isEmpty) {
-                  return _emptyState(context, ref, running, scrape);
-                }
-                return _buildRows(context, ref, all, query);
-              },
+      body: ScrollConfiguration(
+        behavior: webRowScrollBehavior,
+        child: Column(
+          children: [
+            const SearchBarField(),
+            Expanded(
+              child: vehiclesAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, _) =>
+                    Center(child: Text('Failed to load vehicles: $error')),
+                data: (all) {
+                  if (all.isEmpty) {
+                    return _emptyState(context, ref, running, scrape);
+                  }
+                  return _buildRows(context, ref, all, query);
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

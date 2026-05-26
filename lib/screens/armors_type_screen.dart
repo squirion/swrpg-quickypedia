@@ -11,6 +11,7 @@ import 'package:swrpg_quickypedia/widgets/armor_tile.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
 import 'package:swrpg_quickypedia/widgets/download_from_cloud_button.dart';
 import 'package:swrpg_quickypedia/widgets/search_bar_field.dart';
+import 'package:swrpg_quickypedia/widgets/web_row_scroll_behavior.dart';
 
 /// Intermediate screen for armors: one horizontal row per Fandom
 /// subcategory, mirroring [WeaponsTypeScreen]. Tapping a row title
@@ -40,23 +41,26 @@ class ArmorsTypeScreen extends ConsumerWidget {
         ],
         bottom: _ArmorsScrapeBanner(state: scrape),
       ),
-      body: Column(
-        children: [
-          const SearchBarField(),
-          Expanded(
-            child: armorsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) =>
-                  Center(child: Text('Failed to load armors: $error')),
-              data: (all) {
-                if (all.isEmpty) {
-                  return _emptyState(context, ref, running, scrape);
-                }
-                return _buildRows(context, ref, all, query);
-              },
+      body: ScrollConfiguration(
+        behavior: webRowScrollBehavior,
+        child: Column(
+          children: [
+            const SearchBarField(),
+            Expanded(
+              child: armorsAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, _) =>
+                    Center(child: Text('Failed to load armors: $error')),
+                data: (all) {
+                  if (all.isEmpty) {
+                    return _emptyState(context, ref, running, scrape);
+                  }
+                  return _buildRows(context, ref, all, query);
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

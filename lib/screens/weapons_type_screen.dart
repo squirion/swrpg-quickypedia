@@ -11,6 +11,7 @@ import 'package:swrpg_quickypedia/widgets/download_from_cloud_button.dart';
 import 'package:swrpg_quickypedia/widgets/search_bar_field.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_sort_menu.dart';
 import 'package:swrpg_quickypedia/widgets/weapon_tile.dart';
+import 'package:swrpg_quickypedia/widgets/web_row_scroll_behavior.dart';
 
 /// Intermediate screen for weapons: one horizontal row per weapon type
 /// (skill), mirroring the home-screen format. Tapping a row title opens
@@ -40,23 +41,26 @@ class WeaponsTypeScreen extends ConsumerWidget {
         ],
         bottom: _WeaponsScrapeBanner(state: scrape),
       ),
-      body: Column(
-        children: [
-          const SearchBarField(),
-          Expanded(
-            child: weaponsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) =>
-                  Center(child: Text('Failed to load weapons: $error')),
-              data: (all) {
-                if (all.isEmpty) {
-                  return _emptyState(context, ref, running, scrape);
-                }
-                return _buildRows(context, ref, all, query);
-              },
+      body: ScrollConfiguration(
+        behavior: webRowScrollBehavior,
+        child: Column(
+          children: [
+            const SearchBarField(),
+            Expanded(
+              child: weaponsAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, _) =>
+                    Center(child: Text('Failed to load weapons: $error')),
+                data: (all) {
+                  if (all.isEmpty) {
+                    return _emptyState(context, ref, running, scrape);
+                  }
+                  return _buildRows(context, ref, all, query);
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -11,6 +11,7 @@ import 'package:swrpg_quickypedia/widgets/beast_tile.dart';
 import 'package:swrpg_quickypedia/widgets/category_row.dart';
 import 'package:swrpg_quickypedia/widgets/download_from_cloud_button.dart';
 import 'package:swrpg_quickypedia/widgets/search_bar_field.dart';
+import 'package:swrpg_quickypedia/widgets/web_row_scroll_behavior.dart';
 
 class BeastsTypeScreen extends ConsumerWidget {
   const BeastsTypeScreen({super.key});
@@ -37,23 +38,27 @@ class BeastsTypeScreen extends ConsumerWidget {
         ],
         bottom: _BeastsScrapeBanner(state: scrape),
       ),
-      body: Column(
-        children: [
-          const SearchBarField(),
-          Expanded(
-            child: beastsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) =>
-                  Center(child: Text('Failed to load beasts: $error')),
-              data: (all) {
-                if (all.isEmpty) {
-                  return _emptyState(context, ref, running, scrape);
-                }
-                return _buildRows(context, ref, all, query);
-              },
+      body: ScrollConfiguration(
+        behavior: webRowScrollBehavior,
+        child: Column(
+          children: [
+            const SearchBarField(),
+            Expanded(
+              child: beastsAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, _) =>
+                    Center(child: Text('Failed to load beasts: $error')),
+                data: (all) {
+                  if (all.isEmpty) {
+                    return _emptyState(context, ref, running, scrape);
+                  }
+                  return _buildRows(context, ref, all, query);
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

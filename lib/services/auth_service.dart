@@ -1,9 +1,7 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:oauth1/oauth1.dart' as oauth1;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class AuthService {
   static const _accessTokenKey = 'op_access_token';
@@ -77,24 +75,6 @@ class AuthService {
       key: _accessSecretKey,
       value: _accessCredentials!.tokenSecret,
     );
-  }
-
-  /// Open the authorization URL in an external browser.
-  Future<void> launchAuthorizationUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      // On web the browser *is* the external app, so
-      // `LaunchMode.externalApplication` just logs a warning. Use
-      // `platformDefault` (opens in a new tab) instead.
-      await launchUrl(
-        uri,
-        mode: kIsWeb
-            ? LaunchMode.platformDefault
-            : LaunchMode.externalApplication,
-      );
-    } else {
-      throw Exception('Could not launch $url');
-    }
   }
 
   /// Create an authenticated HTTP client.

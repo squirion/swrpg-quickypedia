@@ -100,11 +100,20 @@ class AuthNotifier extends Notifier<AuthState> {
     );
   }
 
-  Future<void> startOAuthFlow() async {
+  /// Fetch a fresh OAuth request token and stash the authorization URL
+  /// on the state. Idempotent — a second call while a URL is already
+  /// cached is a no-op.
+  ///
+  /// Login screen calls this on mount so the URL is ready before the
+  /// user taps. That lets the sign-in button render as a real anchor
+  /// (via the `Link` widget), which is the only way to reliably open
+  /// the Obsidian Portal page in iOS Safari — its popup blocker
+  /// silently drops `window.open()` calls that happen after an `await`.
+  Future<void> prepareAuthorizationUrl() async {
+    if (state.authorizationUrl != null) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
       final url = await _authService.getAuthorizationUrl();
-      await _authService.launchAuthorizationUrl(url);
       state = state.copyWith(
         authorizationUrl: url,
         isLoading: false,
@@ -115,6 +124,12 @@ class AuthNotifier extends Notifier<AuthState> {
         isLoading: false,
       );
     }
+  }
+
+  /// Drop the cached URL so the next [prepareAuthorizationUrl] call
+  /// fetches a fresh, unconsumed request token. Used by "Start over".
+  void clearAuthorizationUrl() {
+    state = AuthState(status: state.status);
   }
 
   Future<void> submitVerifier(String verifier) async {
